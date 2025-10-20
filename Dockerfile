@@ -65,33 +65,32 @@ RUN cd /root && \
     git clone https://github.com/GoTeamEpsilon/ctakes-rest-service.git && \
     cd ctakes-rest-service
 
+COPY sno_rx_21_aa_db /root/ctakes-rest-service/sno_rx_21_aa_db
+
 # Load SQL data scripts (this may take several hours)
+# Load SQL data scripts during build (this may take several hours)
 RUN service mysql start && \
-    sleep 10 && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/01_setup.sql && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/02_load.sql && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/03_load.sql && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/04_load.sql && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/05_load.sql && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/06_load.sql && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/07_load.sql && \
-    mysql -u root -ppass < /root/ctakes-rest-service/sno_rx_16ab_db/08_load.sql && \
+    sleep 30 && \
+    for sql_file in /root/ctakes-rest-service/sno_rx_21_aa_db/*.sql; do \
+        echo "Executing $sql_file..."; \
+        mysql -u root -ppass < "$sql_file" || { echo "Failed to execute $sql_file"; exit 1; }; \
+    done && \
+    echo "SQL execution completed successfully" && \
     service mysql stop
 
-# Build the codebase
+
+# Build the codebase (Updated to only build required modules)
 RUN cd /root/ctakes-rest-service && \
     mkdir ctakes-codebase-area && \
     cd ctakes-codebase-area && \
     # Check out cTAKES trunk
     svn export 'https://svn.apache.org/repos/asf/ctakes/trunk' && \
     cd trunk && \
-    # Clean Maven cache to avoid corrupted artifacts
     rm -rf ~/.m2/repository && \
-    # Build all cTAKES modules to generate 4.0.1-SNAPSHOT artifacts
-    mvn install -Dmaven.test.skip=true -U -Dmaven.repo.local=/root/.m2/repository && \
-    cd ../../ctakes-web-rest && \
-    # Build ctakes-web-rest
-    mvn install -Dmaven.test.skip=true -U -Dmaven.repo.local=/root/.m2/repository
+    mvn clean install -Dmaven.test.skip=true && \
+    # 2. Build ctakes-web-rest (This final module relies on the 4.0.1-SNAPSHOTs installed above)
+    cd /root/ctakes-rest-service/ctakes-web-rest && \
+    mvn install -Dmaven.test.skip=true
 
 # Deploy the WAR file to Tomcat
 RUN mv /root/ctakes-rest-service/ctakes-web-rest/target/ctakes-web-rest.war /opt/tomcat/latest/webapps/
