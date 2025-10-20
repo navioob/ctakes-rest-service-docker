@@ -17,12 +17,12 @@ RUN echo "Listing JVM directory:" && \
     ls -l /usr/lib/jvm/ && \
     java -version 2>&1 | grep -q "1.8" || { echo "Java 8 not installed"; exit 1; } && \
     javac -version 2>&1 | grep -q "1.8" || { echo "Javac 8 not installed"; exit 1; } && \
-    [ -f /usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java ] || { echo "Java binary not found"; exit 1; } && \
-    [ -f /usr/lib/jvm/java-8-openjdk-arm64/bin/javac ] || { echo "Javac binary not found"; exit 1; } && \
-    update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java 1081 && \
-    update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-8-openjdk-arm64/bin/javac 1081 && \
-    update-alternatives --set java /usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java && \
-    update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-arm64/bin/javac && \
+    [ -f /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java ] || { echo "Java binary not found"; exit 1; } && \
+    [ -f /usr/lib/jvm/java-8-openjdk-amd64/bin/javac ] || { echo "Javac binary not found"; exit 1; } && \
+    update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java 1081 && \
+    update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac 1081 && \
+    update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java && \
+    update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac && \
     update-alternatives --display java && \
     update-alternatives --display javac
 
