@@ -12,17 +12,17 @@ RUN apt-get update -y && \
     apt-get install -y maven subversion git unzip wget curl openjdk-8-jdk openjdk-8-jre-headless mysql-server mysql-client supervisor && \
     apt-get clean
 
-# Verify Java 8 installation and configure alternatives for AMD64
+# Verify Java 8 installation and configure alternatives for ARM64
 RUN echo "Listing JVM directory:" && \
     ls -l /usr/lib/jvm/ && \
     java -version 2>&1 | grep -q "1.8" || { echo "Java 8 not installed"; exit 1; } && \
     javac -version 2>&1 | grep -q "1.8" || { echo "Javac 8 not installed"; exit 1; } && \
-    [ -f /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java ] || { echo "Java binary not found"; exit 1; } && \
-    [ -f /usr/lib/jvm/java-8-openjdk-amd64/bin/javac ] || { echo "Javac binary not found"; exit 1; } && \
-    update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java 1081 && \
-    update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac 1081 && \
-    update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java && \
-    update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac && \
+    [ -f /usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java ] || { echo "Java binary not found"; exit 1; } && \
+    [ -f /usr/lib/jvm/java-8-openjdk-arm64/bin/javac ] || { echo "Javac binary not found"; exit 1; } && \
+    update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java 1081 && \
+    update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-8-openjdk-arm64/bin/javac 1081 && \
+    update-alternatives --set java /usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java && \
+    update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-arm64/bin/javac && \
     update-alternatives --display java && \
     update-alternatives --display javac
 
@@ -68,6 +68,7 @@ RUN cd /root && \
 COPY sno_rx_21_aa_db /root/ctakes-rest-service/sno_rx_21_aa_db
 
 # Load SQL data scripts (this may take several hours)
+# Load SQL data scripts during build (this may take several hours)
 RUN service mysql start && \
     sleep 30 && \
     for sql_file in /root/ctakes-rest-service/sno_rx_21_aa_db/*.sql; do \
@@ -116,7 +117,7 @@ user=tomcat
 autostart=true
 autorestart=true
 priority=2
-environment=JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64",JAVA_OPTS="-Djava.security.egd=file:///dev/urandom",CATALINA_HOME="/opt/tomcat/latest",CATALINA_BASE="/opt/tomcat/latest",CATALINA_OPTS="-Xms4000m -Xmx4000m -server -XX:+UseParallelGC"
+environment=JAVA_HOME="/usr/lib/jvm/java-8-openjdk-arm64",JAVA_OPTS="-Djava.security.egd=file:///dev/urandom",CATALINA_HOME="/opt/tomcat/latest",CATALINA_BASE="/opt/tomcat/latest",CATALINA_OPTS="-Xms4000m -Xmx4000m -server -XX:+UseParallelGC"
 stdout_logfile=/var/log/tomcat.stdout.log
 stderr_logfile=/var/log/tomcat.stderr.log
 EOF
