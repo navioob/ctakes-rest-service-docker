@@ -116,8 +116,7 @@ user=tomcat
 autostart=true
 autorestart=true
 priority=2
-environment=JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64",JAVA_OPTS="-Djava.security.egd=file:///dev/urandom",CATALINA_HOME="/opt/tomcat/latest",CATALINA_BASE="/opt/tomcat/latest",CATALINA_OPTS="-Xms4000m -Xmx4000m -server -XX:+UseParallelGC"
-stdout_logfile=/var/log/tomcat.stdout.log
+environment=JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64",JAVA_OPTS="-Djava.security.egd=file:///dev/urandom",CATALINA_HOME="/opt/tomcat/latest",CATALINA_BASE="/opt/tomcat/latest",CATALINA_OPTS="-Xms4000m -Xmx4000m -server -XX:+UseParallelGC -XX:-UseContainerSupport"stdout_logfile=/var/log/tomcat.stdout.log
 stderr_logfile=/var/log/tomcat.stderr.log
 EOF
 
