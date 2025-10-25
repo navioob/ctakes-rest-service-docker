@@ -177,7 +177,8 @@ def generate_summary(diagnosis_text, symptoms_text, prescription_text):
     return response.parsed['text']
 
 def generate_tags(diagnosis_text, symptoms_text, prescription_text):
-    url = 'http://localhost:8080/ctakes-web-rest/service/analyze'
+    # API follows the container name deployed for cTAKES REST service in the server environment
+    url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze'
     params = {'pipeline': 'Default'}
     headers = {'cache-control': 'no-cache'}
     data = generate_summary(
