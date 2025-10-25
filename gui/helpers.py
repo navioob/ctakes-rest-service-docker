@@ -36,7 +36,7 @@ desc_df = desc_df[(desc_df['typeID'] == '900000000000003001')&(desc_df['active']
 code_to_term = dict(zip(desc_df['conceptId'], desc_df['term']))
 
 # Define the prompt and schema_output
-prompt = """
+clinical_text_refinement_prompt = """
 You are an expert medical scribe AI tasked with transforming raw, abbreviated clinical notes from a doctor into a clear, structured, and professionally articulated narrative summary for medical professionals, patients, or reviewers. Your goal is to create a single, flowing paragraph that integrates the provided Diagnosis Text, Symptoms Text, and Prescription Text into a cohesive, readable narrative, strictly using only the input data without adding unprovided details (e.g., age, gender, vital signs, or symptoms not explicitly mentioned). Expand medical abbreviations accurately based on standard medical terminology (e.g., 'DM' as Diabetes Mellitus, 'HPT' as Hypertension, 'U/L' as Uncontrolled, 'h/o' as history of, 'od' as once daily, 'bd' as twice daily, 'BP' as Blood Pressure, 'DXT' as blood glucose testing or control, 't' as tablet, 'on' as once nightly). If an abbreviation is ambiguous, infer the most likely meaning from context without introducing errors. Parse delimiter-separated inputs (e.g., '^^^^^^') to treat each segment as a distinct diagnosis or prescription. Use the Symptoms Text for current medication dosages if discrepancies exist with the Prescription Text. Structure the narrative as follows: (1) Start with the patient’s current presentation, summarizing diagnoses with full descriptions; (2) Include relevant medical history (e.g., past conditions like hepatitis A); (3) Describe current symptoms or status (e.g., 'no active complaints' or control status like 'BP well controlled'); (4) Conclude with the ongoing treatment plan, detailing medications with expanded dosage terms and monitoring instructions. Ensure the tone is formal, objective, and medically accurate, mimicking the professional style of a clinical summary. Do not include ICD-10 codes in the output. Do not invent new conditions, treatments, or clinical findings not present in the input.
 
 **Input**:
@@ -55,7 +55,7 @@ The patient presents with essential (primary) hypertension, type 2 diabetes mell
 Generate the narrative that is suitable for SNOMED-CT mapping using Apache CTAKES for the provided input.
 """
 
-schema_output = {
+clinical_text_refinement_schema_output = {
     "type": "object",
     "properties": {
         "text": {
@@ -64,6 +64,94 @@ schema_output = {
         },
     },
     "required": ["text"]
+}
+
+tags_filtering_prompt = """
+You are an expert in medical text processing with a great understanding of SNOMED-CT concepts and the context of a clinical text that doctors writes during triage or consultation. Your task is to filter and retain only the meaningful extracted SNOMED-CT terms that was extracted from the clinical text using Apache CTAKES.
+Apache CTakes extract terms in a very traditional way, and often includes many terms that are not relevant to the clinical context. Your goal is to analyze the provided Diagnosis Text, Symptoms Text, and Prescription Text along with the list of generated terms from Apache CTAKES, and filter out any terms that do not directly relate to the patient's current medical conditions, symptoms, diagnoses, or treatments as described in the input texts.
+You should keep only those terms that are explanatory and directly relevant clinical text summary.
+
+There are five categoris of terms that will be extracted from Apache CTAKES, and you should on keeping terms from these categories that has these certain keywords. Generally, you should keep terms that are do not have the terms regarding "qualifier value", "unit of presentation"
+1. Anatomical Sites - keywords such as "Body Structure", "Body Part"
+2. Procedures - keywords such as "Procedure", "Therapeutic Procedure", "Diagnostic Procedure", don't include any "qualifier value"
+3. Symptoms - keywords such as "Finding", "Sign", "Symptom", "Clinical Finding", don't include any "qualifier value", "substance" for this category
+4. Diagnosis - keywords such as "Disease", "Disorder", "Syndrome", "Infection", "Neoplasm", don't include any "qualifier value"
+5. Medications - keywords such as "Pharmaceutical", "Drug", "Medication", "Therapeutic Substance", "Substance", don't include any "unit of presentation", "qualifier value" or specifically "Medicinal Product" for this category
+
+**Input**:
+- **Clinical Text**: {{clinical_text}}
+- **Generated Terms**: {{generated_terms}}
+
+**Output**:
+A JSON object with the following structure, containing only the filtered SNOMED-CT Terms and ConceptID for each category following the schema output provided.
+
+"""
+
+tags_filtering_schema_output = {
+    "type": "object",
+    "properties": {
+        "anatomical_sites": {
+        "type": "array",
+        "description": "List of SNOMED-CT Terms and ConceptID for catergory anatomical_sites. Can be an empty list [].",
+        "items": {
+            "type": "object",
+            "properties": {
+            "term": {"type": "string", "description": "Description of SNOMED-CT Term for the ConceptID."},
+            "code": {"type": "string", "description": "ConceptID for SNOMED-CT."}
+            },
+            "required": ["term", "code"]
+        }
+        },
+        "procedures": {
+        "type": "array",
+        "description": "List of SNOMED-CT Terms and ConceptID for catergory procedures. Can be an empty list [].",
+        "items": {
+            "type": "object",
+            "properties": {
+            "term": {"type": "string", "description": "Description of SNOMED-CT Term for the ConceptID."},
+            "code": {"type": "string", "description": "ConceptID for SNOMED-CT."}
+            },
+            "required": ["term", "code"]
+        }
+        },
+        "symptoms": {
+        "type": "array",
+        "description": "List of SNOMED-CT Terms and ConceptID for catergory symptoms. Can be an empty list [].",
+        "items": {
+            "type": "object",
+            "properties": {
+            "term": {"type": "string", "description": "Description of SNOMED-CT Term for the ConceptID."},
+            "code": {"type": "string", "description": "ConceptID for SNOMED-CT."}
+            },
+            "required": ["term", "code"]
+        }
+        },
+        "diagnosis": {
+        "type": "array",
+        "description": "List of SNOMED-CT Terms and ConceptID for catergory diagnosis. Can be an empty list [].",
+        "items": {
+            "type": "object",
+            "properties": {
+            "term": {"type": "string", "description": "Description of SNOMED-CT Term for the ConceptID."},
+            "code": {"type": "string", "description": "ConceptID for SNOMED-CT."}
+            },
+            "required": ["term", "code"]
+        }
+        },
+        "medications": {
+        "type": "array",
+        "description": "List of SNOMED-CT Terms and ConceptID for catergory Medications. Can be an empty list [].",
+        "items": {
+            "type": "object",
+            "properties": {
+            "term": {"type": "string", "description": "Description of SNOMED-CT Term for the ConceptID."},
+            "code": {"type": "string", "description": "ConceptID for SNOMED-CT."}
+            },
+            "required": ["term", "code"]
+        }
+        }
+    },
+    "required": ["anatomical_sites", "procedures", "symptoms", "diagnosis", "medications"]
 }
 
 def call_llm(contents, config):
@@ -79,10 +167,10 @@ def generate_summary(diagnosis_text, symptoms_text, prescription_text):
     ]
     
     config = types.GenerateContentConfig(
-        system_instruction=types.Part.from_text(text=prompt),
+        system_instruction=types.Part.from_text(text=clinical_text_refinement_prompt),
         temperature=0.0,
         response_mime_type='application/json',
-        response_json_schema=schema_output,
+        response_json_schema=clinical_text_refinement_schema_output,
         thinking_config=types.ThinkingConfig(thinking_budget=500),
     )
     response = call_llm(contents, config)
@@ -171,3 +259,19 @@ def parse_ctakes_to_json(json_output):
             result[output_key] = sorted(list(codes), key=lambda x: x[0])  # Sort by code
 
     return json.dumps(result)
+
+def filter_tags(clinical_text, generated_terms):
+    contents = [
+        types.Part.from_text(text=f"Clinical Text: {clinical_text}"),
+        types.Part.from_text(text=f"Generated Terms: {generated_terms}"),
+    ]
+    
+    config = types.GenerateContentConfig(
+        system_instruction=types.Part.from_text(text=tags_filtering_prompt),
+        temperature=0.0,
+        response_mime_type='application/json',
+        response_json_schema=tags_filtering_schema_output,
+        thinking_config=types.ThinkingConfig(thinking_budget=500),
+    )
+    response = call_llm(contents, config)
+    return response.parsed
