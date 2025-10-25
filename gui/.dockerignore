@@ -1,0 +1,11 @@
+# Ignore virtual environments
+.venv
+venv
+
+# Ignore git/IDE files
+.git
+.gitignore
+
+# Ignore compiled Python files
+__pycache__
+*.pyc

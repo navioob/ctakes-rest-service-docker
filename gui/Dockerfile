@@ -7,14 +7,7 @@ WORKDIR /app
 
 # 2. Copy the required files and directories
 # Copy main application files and configuration
-COPY main.py .
-COPY helpers.py .
-COPY config.yaml .
-# Copy the gui directory
-COPY gui ./gui/
-# Copy the requirements file (assuming you have one, if not, create it!)
-# If you don't have a requirements.txt, you must create one listing all Python dependencies (e.g., streamlit, pandas, etc.)
-COPY requirements.txt .
+COPY . .
 
 # 3. Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
