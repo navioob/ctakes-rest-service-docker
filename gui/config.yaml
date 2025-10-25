@@ -1,0 +1,8 @@
+credentials:
+  usernames:
+    remedi:
+      password: $2a$12$bntK1KX4UntCbh26WGSIruvtHCTZ2hJ5pfS28Q3IJ6rN.OAL1Gw5S # To be replaced with hashed password
+cookie:
+  expiry_days: 30
+  key: random_signature_key # Must be string
+  name: remedi_ctakes_session

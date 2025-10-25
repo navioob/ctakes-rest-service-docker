@@ -110,8 +110,6 @@ clinical-note-enhancer/
 │   └── snomed/             # SNOMED-CT Snapshot files
 │       ├── sct2_Description_Snapshot_*.txt
 │       └── sct2_Concept_Snapshot_*.txt
-├── logs/
-│   └── snomed_issues.log   # Inactive codes and synonym warnings
 └── README.md
 ```
 
@@ -121,7 +119,6 @@ clinical-note-enhancer/
 Edit `helpers.py` to point to your SNOMED-CT files:
 ```python
 SNOMED_DESC_FILE = "path/to/your/sct2_Description_Snapshot_*.txt"
-SNOMED_CONCEPT_FILE = "path/to/your/sct2_Concept_Snapshot_*.txt"
 ```
 
 ### cTAKES Configuration
@@ -132,9 +129,6 @@ url = 'http://your-ctakes-host:port/ctakes-web-rest/service/analyze'
 
 ### LLM Model
 Change the Gemini model in `helpers.py`:
-```python
-model = genai.GenerativeModel('gemini-1.5-pro')  # Or other available models
-```
 
 ## 🐛 Troubleshooting
 
@@ -159,11 +153,6 @@ model = genai.GenerativeModel('gemini-1.5-pro')  # Or other available models
    - Clear browser cache and hard refresh (Ctrl+F5)
    - Check browser console for CSS errors
    - Verify `unsafe_allow_html=True` in `st.markdown()`
-
-### Logs
-- **SNOMED-CT Issues**: Check `logs/snomed_issues.log` for inactive codes and synonym warnings
-- **cTAKES Logs**: Located in cTAKES installation directory
-- **Streamlit Logs**: View in terminal or browser console
 
 ## 🔒 Licensing and Compliance
 
