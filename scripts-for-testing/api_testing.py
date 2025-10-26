@@ -1,7 +1,7 @@
 import requests
 import json
 
-url = 'http://ctakes-web-rest/ctakes-web-rest/service/analyze'
+url = 'http://ctakes-rest-service/ctakes-web-rest/service/analyze'
 params = {'pipeline': 'Default'}
 headers = {'cache-control': 'no-cache'}
 data = """
