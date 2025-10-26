@@ -8,6 +8,7 @@ WORKDIR /app
 # 2. Copy the required files and directories
 # Copy main application files and configuration
 COPY . .
+COPY ../.env .env
 
 # 3. Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
