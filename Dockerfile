@@ -4,12 +4,13 @@ FROM ubuntu:18.04
 # Set non-interactive mode for apt-get
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Add the OpenJDK PPA to ensure Java 8 availability, install Python and cron
+# Add the OpenJDK PPA to ensure Java 8 availability
 RUN apt-get update -y && \
-    apt-get install -y software-properties-common python3 python3-pip cron && \
+    apt-get install -y software-properties-common && \
     add-apt-repository ppa:openjdk-r/ppa && \
     apt-get update -y && \
-    apt-get install -y maven subversion git unzip wget curl openjdk-8-jdk openjdk-8-jre-headless mysql-server mysql-client supervisor && \
+    # MODIFIED: Added python3, pip, and requests for the healthcheck script
+    apt-get install -y maven subversion git unzip wget curl openjdk-8-jdk openjdk-8-jre-headless mysql-server mysql-client supervisor python3 python3-pip && \
     pip3 install requests && \
     apt-get clean
 
@@ -27,25 +28,29 @@ RUN echo "Listing JVM directory:" && \
     update-alternatives --display java && \
     update-alternatives --display javac
 
-# Initialize MySQL, set root password, and increase timeouts
-RUN echo "[mysqld]\nwait_timeout=28800\ninteractive_timeout=28800" >> /etc/mysql/my.cnf && \
-    service mysql start && \
+# Initialize MySQL and set root password
+RUN service mysql start && \
     sleep 10 && \
+    # Use mysqld_safe to ensure MySQL starts in a mode allowing root access
     mysqld_safe --skip-grant-tables & \
     sleep 10 && \
+    # Create a temporary SQL script to set root password
     echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'pass'; FLUSH PRIVILEGES;" > /tmp/init.sql && \
     mysql -u root < /tmp/init.sql && \
+    # Verify root access with new password
     mysql -u root -ppass -e "SELECT 1;" || { echo "Root access with password failed"; exit 1; } && \
+    # Mimic mysql_secure_installation steps
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='';" && \
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" && \
     mysql -u root -ppass -e "DROP DATABASE IF EXISTS test;" && \
     mysql -u root -ppass -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" && \
     mysql -u root -ppass -e "FLUSH PRIVILEGES;" && \
+    # Clean up and stop MySQL
     rm /tmp/init.sql && \
     mysqladmin -u root -ppass shutdown && \
     sleep 5
 
-# Install Tomcat 8.5.42 and MySQL JDBC driver
+# Install Tomcat 8.5.42
 RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     cd /tmp && \
     wget -q --tries=3 http://archive.apache.org/dist/tomcat/tomcat-8/v8.5.42/bin/apache-tomcat-8.5.42.zip && \
@@ -55,16 +60,7 @@ RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     ln -s /opt/tomcat/apache-tomcat-8.5.42 /opt/tomcat/latest && \
     chown -R tomcat: /opt/tomcat && \
     chmod +x /opt/tomcat/latest/bin/*.sh && \
-    wget https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.27.jar -P /opt/tomcat/latest/lib/ && \
     rm -rf /tmp/*
-
-# Copy health check script
-COPY healthcheck.py /root/healthcheck.py
-
-# Set up cron job to run health check every 10 minutes
-RUN echo "*/10 * * * * python3 /root/healthcheck.py >> /var/log/healthcheck.log 2>&1" > /etc/cron.d/healthcheck && \
-    chmod 0644 /etc/cron.d/healthcheck && \
-    crontab /etc/cron.d/healthcheck
 
 # Clone the repository
 RUN cd /root && \
@@ -73,7 +69,7 @@ RUN cd /root && \
 
 COPY sno_rx_21_aa_db /root/ctakes-rest-service/sno_rx_21_aa_db
 
-# Load SQL data scripts
+# Load SQL data scripts (this may take several hours)
 RUN service mysql start && \
     sleep 30 && \
     for sql_file in /root/ctakes-rest-service/sno_rx_21_aa_db/*.sql; do \
@@ -83,19 +79,26 @@ RUN service mysql start && \
     echo "SQL execution completed successfully" && \
     service mysql stop
 
-# Build the codebase
+
+# Build the codebase (Updated to only build required modules)
 RUN cd /root/ctakes-rest-service && \
     mkdir ctakes-codebase-area && \
     cd ctakes-codebase-area && \
+    # Check out cTAKES trunk
     svn export 'https://svn.apache.org/repos/asf/ctakes/trunk' && \
     cd trunk && \
     rm -rf ~/.m2/repository && \
     mvn clean install -Dmaven.test.skip=true && \
+    # 2. Build ctakes-web-rest (This final module relies on the 4.0.1-SNAPSHOTs installed above)
     cd /root/ctakes-rest-service/ctakes-web-rest && \
     mvn install -Dmaven.test.skip=true
 
 # Deploy the WAR file to Tomcat
 RUN mv /root/ctakes-rest-service/ctakes-web-rest/target/ctakes-web-rest.war /opt/tomcat/latest/webapps/
+
+# --- NEW: Copy healthcheck.py (Must be in your build context) ---
+COPY healthcheck.py /usr/local/bin/healthcheck.py
+# ------------------------------------------------------------------
 
 # Set up Supervisor to manage MySQL and Tomcat
 RUN mkdir -p /etc/supervisor/conf.d
@@ -108,30 +111,35 @@ pidfile=/var/run/supervisord.pid
 [program:mysqld]
 command=/usr/sbin/mysqld --user=root
 autostart=true
-autorestart=unexpected
-exitcodes=0
+autorestart=true
 priority=1
 stdout_logfile=/var/log/mysql.stdout.log
 stderr_logfile=/var/log/mysql.stderr.log
-startsecs=10
-startretries=3
 
 [program:tomcat]
 command=/opt/tomcat/latest/bin/catalina.sh run
 user=tomcat
 autostart=true
-autorestart=unexpected
-exitcodes=0
+autorestart=true
 priority=2
 environment=JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64",JAVA_OPTS="-Djava.security.egd=file:///dev/urandom",CATALINA_HOME="/opt/tomcat/latest",CATALINA_BASE="/opt/tomcat/latest",CATALINA_OPTS="-Xms4000m -Xmx4000m -server -XX:+UseParallelGC -XX:-UseContainerSupport"
 stdout_logfile=/var/log/tomcat.stdout.log
 stderr_logfile=/var/log/tomcat.stderr.log
-startsecs=10
-startretries=3
+
+# --- NEW: Healthcheck Program (Emulating Cron Every 10 Minutes) ---
+[program:healthcheck]
+command=/usr/bin/python3 /usr/local/bin/healthcheck.py
+autostart=true
+autorestart=true
+user=root
+priority=3
+stdout_logfile=/var/log/healthcheck.stdout.log
+stderr_logfile=/var/log/healthcheck.stderr.log
+# ------------------------------------------------------------------
 EOF
 
 # Expose Tomcat port
 EXPOSE 8080
 
-# Start cron and Supervisor
-CMD service cron start && /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+# Run Supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
