@@ -133,4 +133,4 @@ EOF
 EXPOSE 8080
 
 # Run Supervisor
-CMD service cron start && /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+CMD ["/bin/bash", "-c", "service cron start && /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"]
