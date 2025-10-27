@@ -27,30 +27,26 @@ RUN echo "Listing JVM directory:" && \
     update-alternatives --display javac
 
 # Initialize MySQL and set root password
-RUN echo "[mysqld]\nwait_timeout=28800\ninteractive_timeout=28800" >> /etc/mysql/my.cnf && \
-    service mysql start && \
+RUN service mysql start && \
     sleep 10 && \
+    # Use mysqld_safe to ensure MySQL starts in a mode allowing root access
     mysqld_safe --skip-grant-tables & \
     sleep 10 && \
+    # Create a temporary SQL script to set root password
     echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'pass'; FLUSH PRIVILEGES;" > /tmp/init.sql && \
     mysql -u root < /tmp/init.sql && \
+    # Verify root access with new password
     mysql -u root -ppass -e "SELECT 1;" || { echo "Root access with password failed"; exit 1; } && \
+    # Mimic mysql_secure_installation steps
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='';" && \
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" && \
     mysql -u root -ppass -e "DROP DATABASE IF EXISTS test;" && \
     mysql -u root -ppass -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" && \
     mysql -u root -ppass -e "FLUSH PRIVILEGES;" && \
+    # Clean up and stop MySQL
     rm /tmp/init.sql && \
     mysqladmin -u root -ppass shutdown && \
     sleep 5
-
-# Copy health check script
-COPY healthcheck.py /root/healthcheck.py
-
-# Set up cron job to run health check every 10 minutes
-RUN echo "*/10 * * * * python3 /root/healthcheck.py >> /var/log/healthcheck.log 2>&1" > /etc/cron.d/healthcheck && \
-    chmod 0644 /etc/cron.d/healthcheck && \
-    crontab /etc/cron.d/healthcheck
 
 # Install Tomcat 8.5.42
 RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
@@ -63,6 +59,14 @@ RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     chown -R tomcat: /opt/tomcat && \
     chmod +x /opt/tomcat/latest/bin/*.sh && \
     rm -rf /tmp/*
+
+# Copy health check script
+COPY healthcheck.py /root/healthcheck.py
+
+# Set up cron job to run health check every 10 minutes
+RUN echo "*/10 * * * * python3 /root/healthcheck.py >> /var/log/healthcheck.log 2>&1" > /etc/cron.d/healthcheck && \
+    chmod 0644 /etc/cron.d/healthcheck && \
+    crontab /etc/cron.d/healthcheck
 
 # Clone the repository
 RUN cd /root && \
@@ -128,5 +132,5 @@ EOF
 # Expose Tomcat port
 EXPOSE 8080
 
-# Start cron and Supervisor
+# Run Supervisor
 CMD service cron start && /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
