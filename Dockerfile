@@ -1,5 +1,5 @@
 # --------------------------------------------------------------
-#  FAST cTAKES REST SERVICE – Ubuntu 22.04 (Tomcat = old style)
+#  FAST cTAKES REST SERVICE – Ubuntu 22.04
 # --------------------------------------------------------------
 FROM ubuntu:22.04 AS builder
 
@@ -17,13 +17,11 @@ RUN apt-get update -y && \
 WORKDIR /build
 RUN git clone --depth 1 https://github.com/GoTeamEpsilon/ctakes-rest-service.git
 
-# 3. Cache Maven deps from real pom.xml files
-RUN cd ctakes-rest-service/ctakes-codebase-area/trunk && \
-    mvn dependency:go-offline -B || true && \
-    cd ../../ctakes-web-rest && \
+# 3. Cache Maven dependencies – only the web-rest pom exists at this point
+RUN cd ctakes-rest-service/ctakes-web-rest && \
     mvn dependency:go-offline -B
 
-# 4. Build cTAKES
+# 4. Build cTAKES (now the trunk folder will be created)
 RUN cd ctakes-rest-service && \
     mkdir -p ctakes-codebase-area && \
     cd ctakes-codebase-area && \
@@ -42,14 +40,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 \
     CATALINA_HOME=/opt/tomcat
 
-# Runtime deps (wget + unzip now included)
+# Runtime deps (wget + unzip for Tomcat)
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
         openjdk-8-jre-headless mysql-server supervisor cron ca-certificates \
         wget unzip && \
     rm -rf /var/lib/apt/lists/*
 
-# === TOMCAT: OLD STYLE (same as your original) ===
+# === TOMCAT: OLD STYLE (your original method) ===
 RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     cd /tmp && \
     wget -q --tries=3 http://archive.apache.org/dist/tomcat/tomcat-8/v8.5.42/bin/apache-tomcat-8.5.42.zip && \
@@ -66,7 +64,7 @@ COPY --from=builder /build/ctakes-rest-service/ctakes-web-rest/target/ctakes-web
 COPY sno_rx_21_aa_db /sno_rx_21_aa_db
 COPY healthcheck.py /root/healthcheck.py
 
-# MySQL 8.0 fix
+# MySQL 8.0 fix (no password, query_cache off)
 RUN echo "[mysqld]\n\
 skip-grant-tables\n\
 default_authentication_plugin=mysql_native_password\n\
