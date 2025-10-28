@@ -1,139 +1,108 @@
-FROM ubuntu:22.04
+FROM ubuntu:18.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 \
     CATALINA_HOME=/opt/tomcat/latest
 
-# --------------------------------------------------------------
-# 1. Install everything
-# --------------------------------------------------------------
+# 2. Install software-properties-common + PPA + update
 RUN apt-get update -y && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository ppa:openjdk-r/ppa -y && \
-    apt-get update -y && \
     apt-get install -y maven subversion git unzip wget curl \
                        openjdk-8-jdk openjdk-8-jre-headless \
                        mysql-server mysql-client supervisor python3 python3-pip cron && \
-    pip3 install requests && \
+                       pip3 install requests && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# --------------------------------------------------------------
-# 2. Verify Java
-# --------------------------------------------------------------
+# Verify Java 8 installation and configure alternatives for AMD64
 RUN echo "Listing JVM directory:" && \
     ls -l /usr/lib/jvm/ && \
-    java -version 2>&1 | grep -q "1.8" || exit 1 && \
-    javac -version 2>&1 | grep -q "1.8" || exit 1 && \
+    java -version 2>&1 | grep -q "1.8" || { echo "Java 8 not installed"; exit 1; } && \
+    javac -version 2>&1 | grep -q "1.8" || { echo "Javac 8 not installed"; exit 1; } && \
+    [ -f /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java ] || { echo "Java binary not found"; exit 1; } && \
+    [ -f /usr/lib/jvm/java-8-openjdk-amd64/bin/javac ] || { echo "Javac binary not found"; exit 1; } && \
     update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java 1081 && \
     update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac 1081 && \
     update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java && \
-    update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac
+    update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac && \
+    update-alternatives --display java && \
+    update-alternatives --display javac
 
-# --------------------------------------------------------------
-# 3. MySQL init – your original logic + Ubuntu 22.04 fix
-# --------------------------------------------------------------
-RUN usermod -d /var/lib/mysql mysql 2>/dev/null || true && \
-    mkdir -p /var/lib/mysql /var/run/mysqld && \
-    chown mysql:mysql /var/lib/mysql /var/run/mysqld && \
-    chmod 750 /var/lib/mysql && \
-    echo "[mysqld]\n\
-skip-grant-tables\n\
-default_authentication_plugin=mysql_native_password\n\
-query_cache_size=0\n\
-query_cache_type=0\n\
-datadir=/var/lib/mysql\n\
-socket=/var/run/mysqld/mysqld.sock\n\
-pid-file=/var/run/mysqld/mysqld.pid\n\
-log-error=/var/log/mysql/error.log\n\
-" > /etc/mysql/my.cnf && \
-    service mysql start && \
-    sleep 15 && \
-    # Set root password using skip-grant-tables
+# Initialize MySQL and set root password
+RUN service mysql start && \
+    sleep 10 && \
+    # Use mysqld_safe to ensure MySQL starts in a mode allowing root access
+    mysqld_safe --skip-grant-tables & \
+    sleep 10 && \
+    # Create a temporary SQL script to set root password
     echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'pass'; FLUSH PRIVILEGES;" > /tmp/init.sql && \
     mysql -u root < /tmp/init.sql && \
-    # Verify root access
-    mysql -u root -ppass -e "SELECT 1;" && \
-    # Secure installation steps
+    # Verify root access with new password
+    mysql -u root -ppass -e "SELECT 1;" || { echo "Root access with password failed"; exit 1; } && \
+    # Mimic mysql_secure_installation steps
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='';" && \
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" && \
     mysql -u root -ppass -e "DROP DATABASE IF EXISTS test;" && \
     mysql -u root -ppass -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" && \
     mysql -u root -ppass -e "FLUSH PRIVILEGES;" && \
-    # Clean up
+    # Clean up and stop MySQL
     rm /tmp/init.sql && \
     mysqladmin -u root -ppass shutdown && \
     sleep 5
 
-# --------------------------------------------------------------
-# 4. Tomcat (your original)
-# --------------------------------------------------------------
+# Install Tomcat 8.5.42
 RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     cd /tmp && \
     wget -q --tries=3 http://archive.apache.org/dist/tomcat/tomcat-8/v8.5.42/bin/apache-tomcat-8.5.42.zip && \
     unzip apache-tomcat-*.zip && \
     mkdir -p /opt/tomcat && \
     mv apache-tomcat-8.5.42 /opt/tomcat/ && \
-    ln -s /opt/tomcat/apache-tomcat-8.5.42 $CATALINA_HOME && \
+    ln -s /opt/tomcat/apache-tomcat-8.5.42 /opt/tomcat/latest && \
     chown -R tomcat: /opt/tomcat && \
-    chmod +x $CATALINA_HOME/bin/*.sh && \
+    chmod +x /opt/tomcat/latest/bin/*.sh && \
     rm -rf /tmp/*
 
-# --------------------------------------------------------------
-# 5. Copy files
-# --------------------------------------------------------------
+# Copy health check script
 COPY healthcheck.py /root/healthcheck.py
-COPY sno_rx_21_aa_db /root/ctakes-rest-service/sno_rx_21_aa_db
 
-# --------------------------------------------------------------
-# 6. Clone repo
-# --------------------------------------------------------------
-RUN cd /root && \
-    git clone --depth 1 https://github.com/GoTeamEpsilon/ctakes-rest-service.git
-
-# --------------------------------------------------------------
-# 7. Load SQL
-# --------------------------------------------------------------
-RUN service mysql start && \
-    sleep 30 && \
-    for sql_file in /root/ctakes-rest-service/sno_rx_21_aa_db/*.sql; do \
-        echo "Executing $sql_file..."; \
-        mysql -u root snomedct < "$sql_file" || exit 1; \
-    done && \
-    echo "SQL execution completed"
-
-# --------------------------------------------------------------
-# 8. Maven cache
-# --------------------------------------------------------------
-RUN cd /root/ctakes-rest-service/ctakes-web-rest && \
-    mvn dependency:go-offline -B
-
-# --------------------------------------------------------------
-# 9. Build cTAKES
-# --------------------------------------------------------------
-RUN cd /root/ctakes-rest-service && \
-    mkdir ctakes-codebase-area && \
-    cd ctakes-codebase-area && \
-    svn export 'https://svn.apache.org/repos/asf/ctakes/trunk' && \
-    cd trunk && \
-    mvn clean install -Dmaven.test.skip=true && \
-    cd /root/ctakes-rest-service/ctakes-web-rest && \
-    mvn install -Dmaven.test.skip=true
-
-# --------------------------------------------------------------
-# 10. Deploy WAR
-# --------------------------------------------------------------
-RUN mv /root/ctakes-rest-service/ctakes-web-rest/target/ctakes-web-rest.war $CATALINA_HOME/webapps/
-
-# --------------------------------------------------------------
-# 11. Cron
-# --------------------------------------------------------------
+# Set up cron job to run health check every 10 minutes
 RUN echo "*/10 * * * * python3 /root/healthcheck.py >> /var/log/healthcheck.log 2>&1" > /etc/cron.d/healthcheck && \
     chmod 0644 /etc/cron.d/healthcheck && \
     crontab /etc/cron.d/healthcheck
 
-# --------------------------------------------------------------
-# 12. Supervisor
-# --------------------------------------------------------------
+# Clone the repository
+RUN cd /root && \
+    git clone https://github.com/GoTeamEpsilon/ctakes-rest-service.git && \
+    cd ctakes-rest-service
+
+COPY sno_rx_21_aa_db /root/ctakes-rest-service/sno_rx_21_aa_db
+
+# Load SQL data scripts (this may take several hours)
+RUN service mysql start && \
+    sleep 30 && \
+    for sql_file in /root/ctakes-rest-service/sno_rx_21_aa_db/*.sql; do \
+        echo "Executing $sql_file..."; \
+        mysql -u root -ppass < "$sql_file" || { echo "Failed to execute $sql_file"; exit 1; }; \
+    done && \
+    echo "SQL execution completed successfully" && \
+    service mysql stop
+
+
+# Build the codebase (Updated to only build required modules)
+RUN cd /root/ctakes-rest-service && \
+    mkdir ctakes-codebase-area && \
+    cd ctakes-codebase-area && \
+    # Check out cTAKES trunk
+    svn export 'https://svn.apache.org/repos/asf/ctakes/trunk' && \
+    cd trunk && \
+    rm -rf ~/.m2/repository && \
+    mvn clean install -Dmaven.test.skip=true && \
+    # 2. Build ctakes-web-rest (This final module relies on the 4.0.1-SNAPSHOTs installed above)
+    cd /root/ctakes-rest-service/ctakes-web-rest && \
+    mvn install -Dmaven.test.skip=true
+
+# Deploy the WAR file to Tomcat
+RUN mv /root/ctakes-rest-service/ctakes-web-rest/target/ctakes-web-rest.war /opt/tomcat/latest/webapps/
+
+# Set up Supervisor to manage MySQL and Tomcat
 RUN mkdir -p /etc/supervisor/conf.d
 COPY <<EOF /etc/supervisor/supervisord.conf
 [supervisord]
@@ -142,7 +111,7 @@ logfile=/var/log/supervisord.log
 pidfile=/var/run/supervisord.pid
 
 [program:mysqld]
-command=/usr/bin/mysqld_safe
+command=/usr/sbin/mysqld --user=root
 autostart=true
 autorestart=true
 priority=1
@@ -150,15 +119,18 @@ stdout_logfile=/var/log/mysql.stdout.log
 stderr_logfile=/var/log/mysql.stderr.log
 
 [program:tomcat]
-command=$CATALINA_HOME/bin/catalina.sh run
+command=/opt/tomcat/latest/bin/catalina.sh run
 user=tomcat
 autostart=true
 autorestart=true
 priority=2
-environment=JAVA_HOME="$JAVA_HOME",CATALINA_OPTS="-Xms4000m -Xmx4000m"
+environment=JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64",JAVA_OPTS="-Djava.security.egd=file:///dev/urandom",CATALINA_HOME="/opt/tomcat/latest",CATALINA_BASE="/opt/tomcat/latest",CATALINA_OPTS="-Xms4000m -Xmx4000m -server -XX:+UseParallelGC -XX:-UseContainerSupport"
 stdout_logfile=/var/log/tomcat.stdout.log
 stderr_logfile=/var/log/tomcat.stderr.log
 EOF
 
+# Expose Tomcat port
 EXPOSE 8080
+
+# Run Supervisor
 CMD ["/bin/bash", "-c", "service cron start && /usr/bin/supervisord -c /etc/supervisor/supervisord.conf"]
