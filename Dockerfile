@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CATALINA_HOME=/opt/tomcat/latest
 
 # --------------------------------------------------------------
-# 1. Install everything (your original)
+# 1. Install everything
 # --------------------------------------------------------------
 RUN apt-get update -y && \
     apt-get install -y software-properties-common && \
@@ -18,7 +18,7 @@ RUN apt-get update -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # --------------------------------------------------------------
-# 2. Verify Java (unchanged)
+# 2. Verify Java
 # --------------------------------------------------------------
 RUN echo "Listing JVM directory:" && \
     ls -l /usr/lib/jvm/ && \
@@ -30,12 +30,13 @@ RUN echo "Listing JVM directory:" && \
     update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac
 
 # --------------------------------------------------------------
-# 3. FIXED: MySQL init – ignore “already exists” errors
+# 3. FIXED: MySQL init – create user with /var/lib/mysql home
 # --------------------------------------------------------------
 RUN (groupadd -r mysql || true) && \
-    (useradd -r -g mysql -d /var/lib/mysql -s /usr/sbin/nologin mysql || true) && \
+    (useradd -r -g mysql -d /var/lib/mysql -s /usr/sbin/nologin -M mysql || true) && \
     mkdir -p /var/lib/mysql /var/run/mysqld && \
     chown mysql:mysql /var/lib/mysql /var/run/mysqld && \
+    chmod 750 /var/lib/mysql && \
     echo "[mysqld]\n\
 skip-grant-tables\n\
 default_authentication_plugin=mysql_native_password\n\
@@ -43,6 +44,7 @@ query_cache_size=0\n\
 query_cache_type=0\n\
 datadir=/var/lib/mysql\n\
 socket=/var/run/mysqld/mysqld.sock\n\
+pid-file=/var/run/mysqld/mysqld.pid\n\
 " > /etc/mysql/my.cnf && \
     service mysql start && \
     sleep 15 && \
@@ -71,7 +73,7 @@ COPY healthcheck.py /root/healthcheck.py
 COPY sno_rx_21_aa_db /root/ctakes-rest-service/sno_rx_21_aa_db
 
 # --------------------------------------------------------------
-# 6. Clone repo (shallow)
+# 6. Clone repo
 # --------------------------------------------------------------
 RUN cd /root && \
     git clone --depth 1 https://github.com/GoTeamEpsilon/ctakes-rest-service.git
@@ -88,13 +90,13 @@ RUN service mysql start && \
     echo "SQL execution completed"
 
 # --------------------------------------------------------------
-# 8. Maven cache (fast rebuilds)
+# 8. Maven cache
 # --------------------------------------------------------------
 RUN cd /root/ctakes-rest-service/ctakes-web-rest && \
     mvn dependency:go-offline -B
 
 # --------------------------------------------------------------
-# 9. Build cTAKES (your original)
+# 9. Build cTAKES
 # --------------------------------------------------------------
 RUN cd /root/ctakes-rest-service && \
     mkdir ctakes-codebase-area && \
@@ -118,7 +120,7 @@ RUN echo "*/10 * * * * python3 /root/healthcheck.py >> /var/log/healthcheck.log 
     crontab /etc/cron.d/healthcheck
 
 # --------------------------------------------------------------
-# 12. Supervisor (unchanged)
+# 12. Supervisor
 # --------------------------------------------------------------
 RUN mkdir -p /etc/supervisor/conf.d
 COPY <<EOF /etc/supervisor/supervisord.conf
