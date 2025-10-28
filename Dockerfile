@@ -32,6 +32,9 @@ RUN echo "Listing JVM directory:" && \
 # --------------------------------------------------------------
 # 3. FIXED: Force correct home + permissions + config
 # --------------------------------------------------------------
+# --------------------------------------------------------------
+# 3. MySQL init – your original + query_cache fix
+# --------------------------------------------------------------
 RUN echo "[mysqld]\n\
 skip-grant-tables\n\
 default_authentication_plugin=mysql_native_password\n\
@@ -39,9 +42,24 @@ query_cache_size=0\n\
 query_cache_type=0\n\
 " > /etc/mysql/my.cnf && \
     service mysql start && \
-    sleep 15 && \
-    mysql -u root -e "CREATE DATABASE IF NOT EXISTS snomedct;" && \
-    mysqladmin shutdown && \
+    sleep 10 && \
+    # Use mysqld_safe to ensure MySQL starts in a mode allowing root access
+    mysqld_safe --skip-grant-tables & \
+    sleep 10 && \
+    # Create a temporary SQL script to set root password
+    echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'pass'; FLUSH PRIVILEGES;" > /tmp/init.sql && \
+    mysql -u root < /tmp/init.sql && \
+    # Verify root access with new password
+    mysql -u root -ppass -e "SELECT 1;" || { echo "Root access with password failed"; exit 1; } && \
+    # Mimic mysql_secure_installation steps
+    mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='';" && \
+    mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" && \
+    mysql -u root -ppass -e "DROP DATABASE IF EXISTS test;" && \
+    mysql -u root -ppass -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" && \
+    mysql -u root -ppass -e "FLUSH PRIVILEGES;" && \
+    # Clean up and stop MySQL
+    rm /tmp/init.sql && \
+    mysqladmin -u root -ppass shutdown && \
     sleep 5
 
 # --------------------------------------------------------------
