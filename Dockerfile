@@ -29,13 +29,10 @@ RUN echo "Listing JVM directory:" && \
     update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java && \
     update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac
 
-# --------------------------------------------------------------
-# 3. FIXED: Force correct home + permissions + config
-# --------------------------------------------------------------
-# --------------------------------------------------------------
-# 3. MySQL init – your original + query_cache fix
-# --------------------------------------------------------------
-RUN echo "[mysqld]\n\
+RUN usermod -d /var/lib/mysql mysql 2>/dev/null || true && \
+    mkdir -p /var/lib/mysql /var/run/mysqld && \
+    chown mysql:mysql /var/lib/mysql /var/run/mysqld && \
+    echo "[mysqld]\n\
 skip-grant-tables\n\
 default_authentication_plugin=mysql_native_password\n\
 query_cache_size=0\n\
