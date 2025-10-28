@@ -1,14 +1,8 @@
-# Use Ubuntu 18.04 as the base image
-FROM ubuntu:18.04
+FROM ubuntu:22.04
 
-# Set non-interactive mode for apt-get
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Add the OpenJDK PPA to ensure Java 8 availability
-# 1. Fix Ubuntu mirrors FIRST (before any apt-get)
-RUN sed -i 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list && \
-    sed -i 's|https://|http://|g' /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive \
+    JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 \
+    CATALINA_HOME=/opt/tomcat/latest
 
 # 2. Install software-properties-common + PPA + update
 RUN apt-get update -y && \
