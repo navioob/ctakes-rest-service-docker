@@ -19,7 +19,6 @@ RUN apt-get update -y && \
                        openjdk-8-jdk openjdk-8-jre-headless \
                        mysql-server mysql-client supervisor python3 python3-pip cron && \
                        pip3 install requests && \
-
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Verify Java 8 installation and configure alternatives for AMD64
