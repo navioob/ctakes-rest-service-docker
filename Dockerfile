@@ -61,7 +61,7 @@ RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     rm -rf /tmp/*
 
 # Copy requirements and install
-RUN apt-get install -y python3 python3-pip cron && \
+RUN apt-get install -y python3-pip cron && \
     pip3 install requests && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
