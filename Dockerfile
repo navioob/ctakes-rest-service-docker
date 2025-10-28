@@ -32,24 +32,16 @@ RUN echo "Listing JVM directory:" && \
 # --------------------------------------------------------------
 # 3. FIXED: Force correct home + permissions + config
 # --------------------------------------------------------------
-RUN mkdir -p /var/lib/mysql /var/run/mysqld && \
-    chown mysql:mysql /var/lib/mysql /var/run/mysqld && \
-    chmod 750 /var/lib/mysql && \
-    echo "[mysqld]\n\
+RUN echo "[mysqld]\n\
 skip-grant-tables\n\
 default_authentication_plugin=mysql_native_password\n\
 query_cache_size=0\n\
 query_cache_type=0\n\
-datadir=/var/lib/mysql\n\
-socket=/var/run/mysqld/mysqld.sock\n\
-pid-file=/var/run/mysqld/mysqld.pid\n\
-log-error=/var/log/mysql/error.log\n\
 " > /etc/mysql/my.cnf && \
-    mysqld --initialize-insecure --user=mysql && \
-    mysqld --skip-networking --socket=/var/run/mysqld/mysqld.sock & \
-    sleep 10 && \
+    service mysql start && \
+    sleep 15 && \
     mysql -u root -e "CREATE DATABASE IF NOT EXISTS snomedct;" && \
-    pkill -f mysqld && \
+    mysqladmin shutdown && \
     sleep 5
 
 # --------------------------------------------------------------
