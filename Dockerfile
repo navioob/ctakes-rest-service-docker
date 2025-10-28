@@ -29,32 +29,37 @@ RUN echo "Listing JVM directory:" && \
     update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java && \
     update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac
 
+# --------------------------------------------------------------
+# 3. MySQL init – your original logic + Ubuntu 22.04 fix
+# --------------------------------------------------------------
 RUN usermod -d /var/lib/mysql mysql 2>/dev/null || true && \
     mkdir -p /var/lib/mysql /var/run/mysqld && \
     chown mysql:mysql /var/lib/mysql /var/run/mysqld && \
+    chmod 750 /var/lib/mysql && \
     echo "[mysqld]\n\
 skip-grant-tables\n\
 default_authentication_plugin=mysql_native_password\n\
 query_cache_size=0\n\
 query_cache_type=0\n\
+datadir=/var/lib/mysql\n\
+socket=/var/run/mysqld/mysqld.sock\n\
+pid-file=/var/run/mysqld/mysqld.pid\n\
+log-error=/var/log/mysql/error.log\n\
 " > /etc/mysql/my.cnf && \
     service mysql start && \
-    sleep 10 && \
-    # Use mysqld_safe to ensure MySQL starts in a mode allowing root access
-    mysqld_safe --skip-grant-tables & \
-    sleep 10 && \
-    # Create a temporary SQL script to set root password
+    sleep 15 && \
+    # Set root password using skip-grant-tables
     echo "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'pass'; FLUSH PRIVILEGES;" > /tmp/init.sql && \
     mysql -u root < /tmp/init.sql && \
-    # Verify root access with new password
-    mysql -u root -ppass -e "SELECT 1;" || { echo "Root access with password failed"; exit 1; } && \
-    # Mimic mysql_secure_installation steps
+    # Verify root access
+    mysql -u root -ppass -e "SELECT 1;" && \
+    # Secure installation steps
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='';" && \
     mysql -u root -ppass -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" && \
     mysql -u root -ppass -e "DROP DATABASE IF EXISTS test;" && \
     mysql -u root -ppass -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" && \
     mysql -u root -ppass -e "FLUSH PRIVILEGES;" && \
-    # Clean up and stop MySQL
+    # Clean up
     rm /tmp/init.sql && \
     mysqladmin -u root -ppass shutdown && \
     sleep 5
