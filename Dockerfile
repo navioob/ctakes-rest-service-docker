@@ -1,6 +1,9 @@
 # Use Ubuntu 18.04 as the base image
 FROM ubuntu:18.04
 
+RUN sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list && \
+    sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list
+
 # Set non-interactive mode for apt-get
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -61,7 +64,7 @@ RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     rm -rf /tmp/*
 
 # Copy requirements and install
-RUN apt-get install -y python3-pip cron && \
+RUN apt-get install -y python3 python3-pip cron && \
     pip3 install requests && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
