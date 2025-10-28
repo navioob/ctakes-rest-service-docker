@@ -60,11 +60,18 @@ RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     chmod +x /opt/tomcat/latest/bin/*.sh && \
     rm -rf /tmp/*
 
+# Copy requirements and install
+RUN apt-get update -y && \
+    apt-get install -y python3 python3-pip cron && \
+    pip3 install requests && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy health check script
 COPY healthcheck.py /root/healthcheck.py
 
 # Set up cron job to run health check every 10 minutes
-RUN echo "*/10 * * * * python3 /root/healthcheck.py >> /var/log/healthcheck.log 2>&1" > /etc/cron.d/healthcheck && \
+RUN echo "*/5 * * * * python3 /root/healthcheck.py >> /var/log/healthcheck.log 2>&1" > /etc/cron.d/healthcheck && \
     chmod 0644 /etc/cron.d/healthcheck && \
     crontab /etc/cron.d/healthcheck
 
