@@ -61,7 +61,11 @@ RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     rm -rf /tmp/*
 
 # Copy requirements and install
-RUN pip3 install requests
+RUN apt-get update -y && \
+    apt-get install -y python3 python3-pip cron && \
+    pip3 install requests && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy health check script
 COPY healthcheck.py /root/healthcheck.py
