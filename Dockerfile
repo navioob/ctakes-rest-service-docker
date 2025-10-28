@@ -30,10 +30,11 @@ RUN echo "Listing JVM directory:" && \
     update-alternatives --set javac /usr/lib/jvm/java-8-openjdk-amd64/bin/javac
 
 # --------------------------------------------------------------
-# 3. FIXED: MySQL init – create user with /var/lib/mysql home
+# 3. FIXED: Force correct home + permissions + config
 # --------------------------------------------------------------
 RUN (groupadd -r mysql || true) && \
     (useradd -r -g mysql -d /var/lib/mysql -s /usr/sbin/nologin -M mysql || true) && \
+    usermod -d /var/lib/mysql mysql 2>/dev/null || true && \
     mkdir -p /var/lib/mysql /var/run/mysqld && \
     chown mysql:mysql /var/lib/mysql /var/run/mysqld && \
     chmod 750 /var/lib/mysql && \
@@ -45,6 +46,7 @@ query_cache_type=0\n\
 datadir=/var/lib/mysql\n\
 socket=/var/run/mysqld/mysqld.sock\n\
 pid-file=/var/run/mysqld/mysqld.pid\n\
+log-error=/var/log/mysql/error.log\n\
 " > /etc/mysql/my.cnf && \
     service mysql start && \
     sleep 15 && \
