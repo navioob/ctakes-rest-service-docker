@@ -1,19 +1,26 @@
 # Use Ubuntu 18.04 as the base image
 FROM ubuntu:18.04
 
-RUN sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list && \
-    sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list
-
 # Set non-interactive mode for apt-get
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Add the OpenJDK PPA to ensure Java 8 availability
+# 1. Fix Ubuntu mirrors FIRST (before any apt-get)
+RUN sed -i 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list && \
+    sed -i 's|https://|http://|g' /etc/apt/sources.list
+
+# 2. Install software-properties-common + PPA + update
 RUN apt-get update -y && \
     apt-get install -y software-properties-common && \
-    add-apt-repository ppa:openjdk-r/ppa && \
+    add-apt-repository ppa:openjdk-r/ppa -y && \
     apt-get update -y && \
-    apt-get install -y maven subversion git unzip wget curl openjdk-8-jdk openjdk-8-jre-headless mysql-server mysql-client supervisor && \
-    apt-get clean
+    apt-get install -y maven subversion git unzip wget curl \
+                       openjdk-8-jdk openjdk-8-jre-headless \
+                       mysql-server mysql-client supervisor python3 python3-pip cron && \
+                       pip3 install requests && \
+
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Verify Java 8 installation and configure alternatives for AMD64
 RUN echo "Listing JVM directory:" && \
@@ -62,12 +69,6 @@ RUN useradd -m -U -d /opt/tomcat -s /bin/false tomcat && \
     chown -R tomcat: /opt/tomcat && \
     chmod +x /opt/tomcat/latest/bin/*.sh && \
     rm -rf /tmp/*
-
-# Copy requirements and install
-RUN apt-get install -y python3 python3-pip cron && \
-    pip3 install requests && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
 
 # Copy health check script
 COPY healthcheck.py /root/healthcheck.py
