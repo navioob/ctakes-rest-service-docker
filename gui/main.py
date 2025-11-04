@@ -38,8 +38,15 @@ if st.session_state.get('authentication_status'):
         .stButton>button:hover {
             background-color: #0056b3;
         }
+        .stButton>button[kind="secondary"] {
+            background-color: #6c757d !important;
+            color: white;
+        }
+        .stButton>button[kind="secondary"]:hover {
+            background-color: #5a6268 !important;
+        }
         .stExpander {
-            border: 1px solid #e0e0e0;
+            border: 1px solid #e0e0d0;
             border-radius: 8px;
             margin-bottom: 10px;
         }
@@ -150,51 +157,89 @@ if st.session_state.get('authentication_status'):
     Fill in the details below and click **Submit** to view the enriched summary and tagged codes.
     """, unsafe_allow_html=True)
 
-    # Input Form
-    with st.form(key="medical_input_form"):
+    # === SESSION STATE INITIALIZATION ===
+    if "symptoms_text" not in st.session_state:
+        st.session_state.symptoms_text = ""
+    if "diagnosis_text" not in st.session_state:
+        st.session_state.diagnosis_text = ""
+    if "prescription_text" not in st.session_state:
+        st.session_state.prescription_text = ""
+    if "submitted" not in st.session_state:
+        st.session_state.submitted = False
+    if "clear_trigger" not in st.session_state:
+        st.session_state.clear_trigger = 0  # Counter to force reset
+
+    # === HANDLE CLEAR LOGIC BEFORE WIDGETS ===
+    if st.session_state.clear_trigger > 0:
+        # This runs on the rerun AFTER clear button
+        st.session_state.symptoms_text = ""
+        st.session_state.diagnosis_text = ""
+        st.session_state.prescription_text = ""
+        st.session_state.submitted = False
+        st.session_state.clear_trigger = 0  # Reset trigger
+        st.rerun()  # One extra rerun to fully clear UI
+
+    # === INPUT FORM ===
+    # === BUTTONS ROW ===
+    col_title, col_clear = st.columns([4, 1])
+    with col_title:
         st.subheader("Enter Clinical Notes")
+    with col_clear:
+        if st.button("🗑️ Clear All Inputs", type="secondary", use_container_width=True):
+            st.session_state.clear_trigger += 1  # Increment trigger
+            st.rerun()  # Immediate rerun to apply clear
+    with st.form(key="medical_input_form"):
+        
+        
         col1, col2, col3 = st.columns([1, 1, 1], gap="medium")
         
         with col1:
-            diagnosis_text = st.text_area(
-                "Diagnosis Text",
-                height=150,
-                placeholder="e.g., Essential (primary) hypertension, Type 2 diabetes mellitus without complications",
-                help="Enter the patient's diagnoses."
-            )
-        
-        with col2:
-            symptoms_text = st.text_area(
+            st.text_area(
                 "Symptoms Text",
                 height=150,
                 placeholder="e.g., Uncontrolled DM, HPT, dyslipidemia, history of hepatitis A, currently on losartan 100mg once daily",
-                help="Include current symptoms, medical history, and medication dosages."
+                help="Include current symptoms, medical history, and medication dosages.",
+                key="symptoms_text"
+            )
+        
+        with col2:
+            st.text_area(
+                "Diagnosis Text",
+                height=150,
+                placeholder="e.g., Essential (primary) hypertension, Type 2 diabetes mellitus without complications",
+                help="Enter the patient's diagnoses.",
+                key="diagnosis_text"
             )
         
         with col3:
-            prescription_text = st.text_area(
+            st.text_area(
                 "Prescription Text",
                 height=150,
                 placeholder="e.g., Losartan 50mg Tablet, Metformin 500mg Tablet",
-                help="Enter the prescribed medications and details."
+                help="Enter the prescribed medications and details.",
+                key="prescription_text"
             )
         
-        # Submit button aligned to the right
-        # col_left, col_right = st.columns([4, 1])
-        # with col_right:
-        submit_button = st.form_submit_button("Submit", type="primary", width="stretch")
+        submit_button = st.form_submit_button("Submit", type="primary", use_container_width=True)
 
-    # Process Submission
+    
+
+    # === PROCESS SUBMISSION ===
     if submit_button:
-        if not diagnosis_text and not symptoms_text and not prescription_text:
+        st.session_state.submitted = True
+
+    if st.session_state.submitted:
+        symptoms_text = st.session_state.symptoms_text
+        diagnosis_text = st.session_state.diagnosis_text
+        prescription_text = st.session_state.prescription_text
+
+        if not any([diagnosis_text, symptoms_text, prescription_text]):
             st.warning("Please enter at least one text field to proceed.")
         else:
             with st.spinner("Generating enriched summary and SNOMED-CT codes..."):
-                # Generate enriched summary
                 enriched_text = generate_summary(diagnosis_text, symptoms_text, prescription_text)
                 
                 if enriched_text:
-                    # Display enriched summary
                     st.subheader("📝 Enriched Clinical Summary")
                     st.markdown(f"""
                     <div class="summary-container">
@@ -202,7 +247,6 @@ if st.session_state.get('authentication_status'):
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Generate cTAKES tags
                     ctakes_response = generate_tags(diagnosis_text, symptoms_text, prescription_text)
                     
                     if ctakes_response:
@@ -210,13 +254,11 @@ if st.session_state.get('authentication_status'):
                         st.subheader("🏷️ Extracted SNOMED-CT Codes")
                         
                         try:
-                            # Parse to JSON
                             parsed_json = parse_ctakes_to_json(ctakes_response)
                             tags = json.loads(parsed_json)
-
                             filtered_tags = filter_tags(enriched_text, tags)
                             
-                            # Display codes in expanders with grouped badge styling
+                            # [Your existing expander code unchanged]
                             with st.expander(f'Anatomical Sites ({len(filtered_tags["anatomical_sites"])})', expanded=False):
                                 if filtered_tags["anatomical_sites"]:
                                     badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
@@ -256,12 +298,12 @@ if st.session_state.get('authentication_status'):
                                     st.markdown(badges, unsafe_allow_html=True)
                                 else:
                                     st.write("No codes found.")
-                        except ValueError as e:
+                        except Exception as e:
                             st.error(f"Error parsing cTAKES output: {e}")
                     else:
-                        st.error("Failed to generate tags from cTAKES. Please check the cTAKES service.")
+                        st.error("Failed to generate tags from cTAKES.")
                 else:
-                    st.error("Failed to generate enriched summary. Please check the API configuration.")
+                    st.error("Failed to generate enriched summary.")
 
 elif st.session_state.get('authentication_status') is False:
     st.error('Username/password is incorrect')
