@@ -158,12 +158,8 @@ if st.session_state.get('authentication_status'):
     """, unsafe_allow_html=True)
 
     # === SESSION STATE INITIALIZATION ===
-    if "symptoms_text" not in st.session_state:
-        st.session_state.symptoms_text = ""
-    if "diagnosis_text" not in st.session_state:
-        st.session_state.diagnosis_text = ""
-    if "prescription_text" not in st.session_state:
-        st.session_state.prescription_text = ""
+    if "doctors_text" not in st.session_state:
+        st.session_state.doctors_text = ""
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
     if "clear_trigger" not in st.session_state:
@@ -172,12 +168,10 @@ if st.session_state.get('authentication_status'):
     # === HANDLE CLEAR LOGIC BEFORE WIDGETS ===
     if st.session_state.clear_trigger > 0:
         # This runs on the rerun AFTER clear button
-        st.session_state.symptoms_text = ""
-        st.session_state.diagnosis_text = ""
-        st.session_state.prescription_text = ""
+        st.session_state.doctors_text = ""
         st.session_state.submitted = False
         st.session_state.clear_trigger = 0  # Reset trigger
-        st.rerun()  # One extra rerun to fully clear UI
+        st.rerun()  # One extra rerun to fully clear UIsource 
 
     # === INPUT FORM ===
     # === BUTTONS ROW ===
@@ -190,35 +184,13 @@ if st.session_state.get('authentication_status'):
             st.rerun()  # Immediate rerun to apply clear
     with st.form(key="medical_input_form"):
         
-        
-        col1, col2, col3 = st.columns([1, 1, 1], gap="medium")
-        
-        with col1:
-            st.text_area(
-                "Symptoms Text",
-                height=150,
-                placeholder="e.g., Uncontrolled DM, HPT, dyslipidemia, history of hepatitis A, currently on losartan 100mg once daily",
-                help="Include current symptoms, medical history, and medication dosages.",
-                key="symptoms_text"
-            )
-        
-        with col2:
-            st.text_area(
-                "Diagnosis Text",
-                height=150,
-                placeholder="e.g., Essential (primary) hypertension, Type 2 diabetes mellitus without complications",
-                help="Enter the patient's diagnoses.",
-                key="diagnosis_text"
-            )
-        
-        with col3:
-            st.text_area(
-                "Prescription Text",
-                height=150,
-                placeholder="e.g., Losartan 50mg Tablet, Metformin 500mg Tablet",
-                help="Enter the prescribed medications and details.",
-                key="prescription_text"
-            )
+        st.text_area(
+            "Doctor's Clinical Text",
+            height=150,
+            placeholder="e.g., Uncontrolled DM, HPT, dyslipidemia, history of hepatitis A, currently on losartan 100mg once daily",
+            help="Include current symptoms, medical history, and medication dosages.",
+            key="doctors_text"
+        )
         
         submit_button = st.form_submit_button("Submit", type="primary", use_container_width=True)
 
@@ -229,15 +201,13 @@ if st.session_state.get('authentication_status'):
         st.session_state.submitted = True
 
     if st.session_state.submitted:
-        symptoms_text = st.session_state.symptoms_text
-        diagnosis_text = st.session_state.diagnosis_text
-        prescription_text = st.session_state.prescription_text
+        doctors_text = st.session_state.doctors_text
 
-        if not any([diagnosis_text, symptoms_text, prescription_text]):
+        if not doctors_text:
             st.warning("Please enter at least one text field to proceed.")
         else:
-            with st.spinner("Generating enriched summary and SNOMED-CT codes..."):
-                enriched_text = generate_summary(diagnosis_text, symptoms_text, prescription_text)
+            with st.spinner("Generating enriched summary and SNOMED-CT codes from clinical notes..."):
+                enriched_text = generate_summary(doctors_text)
                 
                 if enriched_text:
                     st.subheader("📝 Enriched Clinical Summary")
@@ -247,7 +217,7 @@ if st.session_state.get('authentication_status'):
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    ctakes_response = generate_tags(diagnosis_text, symptoms_text, prescription_text)
+                    ctakes_response = generate_tags(doctors_text)
                     
                     if ctakes_response:
                         st.divider()
