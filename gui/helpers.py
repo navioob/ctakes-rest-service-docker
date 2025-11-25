@@ -372,7 +372,7 @@ def filter_tags(clinical_text, generated_terms):
     }
 
     # Fuzzy search threshold (0-100, higher = more strict)
-    FUZZY_SEARCH_THRESHOLD = 80
+    FUZZY_SEARCH_THRESHOLD = 95
     
     for section in filtered_and_enriched_tags:
         seen_codes = set()  # Track codes already added to this section
