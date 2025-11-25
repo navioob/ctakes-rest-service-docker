@@ -201,8 +201,8 @@ def generate_summary(doctors_text):
 
 def generate_tags(doctors_text):
     # API follows the container name deployed for cTAKES REST service in the server environment
-    url = 'http://localhost:8080/ctakes-web-rest/service/analyze' #dev
-    # url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze' #prod
+    # url = 'http://localhost:8080/ctakes-web-rest/service/analyze' #dev
+    url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze' #prod
 
     params = {'pipeline': 'Default'}
     headers = {'cache-control': 'no-cache'}
