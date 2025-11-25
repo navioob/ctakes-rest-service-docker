@@ -92,10 +92,17 @@ There are five categories of terms that will be extracted from Apache CTAKES, an
 4. Diagnosis - keywords such as "Disease", "Disorder", "Syndrome", "Infection", "Neoplasm", don't include any "qualifier value"
 5. Medications - keywords such as "Pharmaceutical", "Drug", "Medication", "Therapeutic Substance", "Substance", don't include any "unit of presentation", "qualifier value" or specifically "Medicinal Product" for this category
 
+TERM FORMATTING REQUIREMENT: When providing SNOMED-CT terms in your output, you must include the semantic type in parentheses after each term name. The format should be:
+- Anatomical Sites: "Term Name (body structure)" - Example: "Heart (body structure)"
+- Procedures: "Term Name (procedure)" - Example: "Blood test (procedure)"
+- Symptoms: "Term Name (finding)" - Example: "Pain (finding)"
+- Diagnosis: "Term Name (disorder)" - Example: "Diabetes (disorder)"
+- Medications: "Term Name (substance)" - Example: "Enoxaparin (substance)"
+
 Besides, after filtering out the terms that are not relevant to the clinical text summary, while abiding to the rules above, you should analysze the remaining terms filtered for the clinical text summary, and further suggest any additional SNOMED-CT Terms and ConceptID that are relevant to the clinical text summary based on the clininal text summary and the generated SNOMED-CT Terms and ConceptIDs from Apache CTAKES, and add them to the list of filtered terms:
 1. You should suggest any possible anatomical sites, procedures, symptoms and diagnoses that are relevant to the clinical text summary, and add them to the list of filtered terms, if the relevant anatomical sites are already included in the list of filtered terms, you should not suggest them again.
 2. For medications, you should suggest the generic name of the medication based on the medication brand name, and add them to the list of filtered terms, if the relevant medications are already included in the list of filtered terms, you should not suggest them again.
-- Example: if found "Clexane", you should suggest "Enoxaparin" as the generic name, and add it to the list of filtered terms.
+- Example: if found "Clexane", you should suggest "Enoxaparin (substance)" as the generic name, and add it to the list of filtered terms.
 
 IMPORTANT: All SNOMED-CT terms and codes (ConceptIDs) that you provide must be based on the latest SNOMED CT description snapshot. Only use terms and codes that exist in the current SNOMED CT description snapshot file. Do not generate or suggest codes that are not present in the latest SNOMED CT description snapshot. Ensure that all ConceptIDs you provide correspond to valid, active SNOMED CT concepts from the most recent description snapshot.
 
@@ -173,6 +180,28 @@ tags_filtering_and_enrichment_schema_output = {
             "required": ["term", "code"]
         }
         }
+    },
+    "required": ["anatomical_sites", "procedures", "symptoms", "diagnosis", "medications"]
+}
+
+final_validation_prompt = """
+Validate SNOMED-CT terms against clinical text. Keep only terms that:
+- Are mentioned/implied in the clinical text
+- Are clinically relevant to the patient's condition
+- Are not generic/vague or incorrectly mapped
+
+Remove terms that don't match the clinical context. Be conservative - remove if unsure.
+Return JSON with same structure: anatomical_sites, procedures, symptoms, diagnosis, medications.
+"""
+
+final_validation_schema_output = {
+    "type": "object",
+    "properties": {
+        "anatomical_sites": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}},
+        "procedures": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}},
+        "symptoms": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}},
+        "diagnosis": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}},
+        "medications": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}}
     },
     "required": ["anatomical_sites", "procedures", "symptoms", "diagnosis", "medications"]
 }
@@ -315,7 +344,7 @@ def fuzzy_search_term(search_term, threshold=80):
     Perform fuzzy search on the SNOMED CT description file to find the best matching term.
     
     Args:
-        search_term (str): The term to search for
+        search_term (str): The term to search for (may include semantic type like "(substance)")
         threshold (int): Minimum similarity score (0-100) to consider a match. Default 80.
     
     Returns:
@@ -327,7 +356,7 @@ def fuzzy_search_term(search_term, threshold=80):
     # Use rapidfuzz to find the best match
     # scorer=fuzz.WRatio uses weighted ratio which is good for partial matches
     result = process.extractOne(
-        search_term,
+        search_term.strip(),
         term_list,
         scorer=fuzz.WRatio,
         score_cutoff=threshold
@@ -353,7 +382,7 @@ def filter_tags(clinical_text, generated_terms):
         temperature=0.0,
         response_mime_type='application/json',
         response_json_schema=tags_filtering_and_enrichment_schema_output,
-        thinking_config=types.ThinkingConfig(thinking_budget=500),
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     response = call_llm(contents, config)
 
@@ -372,7 +401,7 @@ def filter_tags(clinical_text, generated_terms):
     }
 
     # Fuzzy search threshold (0-100, higher = more strict)
-    FUZZY_SEARCH_THRESHOLD = 95
+    FUZZY_SEARCH_THRESHOLD = 90
     
     for section in filtered_and_enriched_tags:
         seen_codes = set()  # Track codes already added to this section
@@ -422,6 +451,54 @@ def filter_tags(clinical_text, generated_terms):
                 else:
                     print(f"  No fuzzy match found for: '{term}' (best score below threshold {FUZZY_SEARCH_THRESHOLD})")
 
-    print("Final Output:", final_output, "\n")
+    print("Final Output after mapping/fuzzy search:", final_output, "\n")
 
-    return final_output
+    # Final validation layer: LLM counter-check if outputs make sense with clinical text
+    validated_output = validate_final_output(clinical_text, final_output)
+    
+    print("Final Validated Output:", validated_output, "\n")
+
+    return validated_output
+
+def validate_final_output(clinical_text, final_output):
+    """
+    Final validation layer using LLM to counter-check if the mapped and fuzzy-searched
+    outputs make sense in the context of the clinical text.
+    
+    Args:
+        clinical_text (str): The original clinical text summary
+        final_output (dict): The final output after mapping and fuzzy search
+    
+    Returns:
+        dict: Validated output with only clinically relevant terms
+    """
+    # Compact JSON format to minimize tokens
+    compact_json = json.dumps(final_output, separators=(',', ':'))
+    
+    contents = [
+        types.Part.from_text(text=f"Clinical: {clinical_text}"),
+        types.Part.from_text(text=f"Terms: {compact_json}"),
+    ]
+    
+    config = types.GenerateContentConfig(
+        system_instruction=types.Part.from_text(text=final_validation_prompt),
+        temperature=0.0,
+        response_mime_type='application/json',
+        response_json_schema=final_validation_schema_output,
+        thinking_config=types.ThinkingConfig(thinking_budget=0),  # Reduced from 500
+    )
+    
+    try:
+        response = call_llm(contents, config)
+        validated_output = response.parsed
+        
+        # Ensure all sections exist even if empty
+        for section in ["anatomical_sites", "procedures", "symptoms", "diagnosis", "medications"]:
+            if section not in validated_output:
+                validated_output[section] = []
+        
+        return validated_output
+    except Exception as e:
+        print(f"Error in final validation: {e}")
+        # Return original output if validation fails
+        return final_output
