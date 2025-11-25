@@ -299,10 +299,17 @@ def filter_tags(clinical_text, generated_terms):
     }
 
     for section in filtered_and_enriched_tags:
+        seen_codes = set()  # Track codes already added to this section
         for item in filtered_and_enriched_tags[section]:
-            if item['code'] in desc_df['conceptId']:
+            code = item.get('code')
+            # Skip if code is already in this section (duplicate)
+            if code in seen_codes:
+                continue
+            # Add to seen_codes and append to output
+            seen_codes.add(code)
+            # Add the term to the item if the code is in the SNOMED CT description file
+            if code in desc_df['conceptId'].values:
+                item['term'] = code_to_term.get(str(code), "Unknown")
                 final_output[section].append(item)
-            else:
-                final_output[section].append(item)
-
+                
     return response.parsed
