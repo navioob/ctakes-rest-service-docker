@@ -7,6 +7,7 @@ from google.oauth2 import service_account
 from dotenv import load_dotenv
 import os
 import pandas as pd
+from rapidfuzz import fuzz, process
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,6 +37,10 @@ desc_df = desc_df[(desc_df['typeID'] == '900000000000003001')&(desc_df['active']
 code_to_term = dict(zip(desc_df['conceptId'], desc_df['term']))
 # Create a set of valid concept IDs for fast lookup
 valid_concept_ids = set(desc_df['conceptId'].values)
+# Create a list of terms for fuzzy search (pre-processed for performance)
+term_list = list(desc_df['term'].values)
+# Create a mapping from term to code for fast lookup after fuzzy match
+term_to_code = dict(zip(desc_df['term'], desc_df['conceptId']))
 
 # Define the prompt and schema_output
 clinical_text_refinement_prompt = """
@@ -50,6 +55,7 @@ Your goal is to create a single, flowing paragraph that integrates the provided 
 5. Do not include ICD-10 codes in the output.
 6. Do not invent new conditions, treatments, or clinical findings not present in the input.
 7. The output of the text should first describe the patient's current presentation, then include relevant medical history, describe current symptoms or status, then describe the current diagnosis and treatment plan, and conclude with the ongoing treatment plan, detailing medications with expanded dosage terms and monitoring instructions.
+8. You should always include the generic name of the medication if the brand name is provided in the input in the output.
 
 **Input**:
 - Raw text from the doctor's clinical notes written during triage or consultation.
@@ -79,14 +85,17 @@ You are an expert in medical text processing with a great understanding of SNOME
 
 Apache CTakes extract terms in a very traditional way, and often includes many terms that are not relevant to the clinical context, but with the downside of being rigid to its dictionary mapping that is provided and it is not always updated to the latest version of SNOMED-CT. Your goal is to analyze, counter check with the provided clinical text summary and the list of generated terms from Apache CTAKES, and filter out any terms that do not directly relate to the patient's current medical conditions, symptoms, diagnoses, or treatments as described in the input texts. 
 
-There are five categoris of terms that will be extracted from Apache CTAKES, and you should on keeping terms from these categories that has these certain keywords. Generally, you should keep terms that are do not have the terms regarding "qualifier value", "unit of presentation"
+There are five categories of terms that will be extracted from Apache CTAKES, and you should on keeping terms from these categories that has these certain keywords. Generally, you should keep terms that are do not have the terms regarding "qualifier value", "unit of presentation"
 1. Anatomical Sites - keywords such as "Body Structure", "Body Part"
 2. Procedures - keywords such as "Procedure", "Therapeutic Procedure", "Diagnostic Procedure", don't include any "qualifier value"
 3. Symptoms - keywords such as "Finding", "Sign", "Symptom", "Clinical Finding", don't include any "qualifier value", "substance" for this category
 4. Diagnosis - keywords such as "Disease", "Disorder", "Syndrome", "Infection", "Neoplasm", don't include any "qualifier value"
 5. Medications - keywords such as "Pharmaceutical", "Drug", "Medication", "Therapeutic Substance", "Substance", don't include any "unit of presentation", "qualifier value" or specifically "Medicinal Product" for this category
 
-Besides, after filtering out the terms that are not relevant to the clinical text summary, you should analysze the remaining terms filtered for the clinical text summary, and further suggest any additional SNOMED-CT Terms and ConceptID that are relevant to the clinical text summary based on the clininal text summary and the generated SNOMED-CT Terms and ConceptIDs from Apache CTAKES, and add them to the list of filtered terms.
+Besides, after filtering out the terms that are not relevant to the clinical text summary, while abiding to the rules above, you should analysze the remaining terms filtered for the clinical text summary, and further suggest any additional SNOMED-CT Terms and ConceptID that are relevant to the clinical text summary based on the clininal text summary and the generated SNOMED-CT Terms and ConceptIDs from Apache CTAKES, and add them to the list of filtered terms:
+1. You should suggest any possible anatomical sites, procedures, symptoms and diagnoses that are relevant to the clinical text summary, and add them to the list of filtered terms, if the relevant anatomical sites are already included in the list of filtered terms, you should not suggest them again.
+2. For medications, you should suggest the generic name of the medication based on the medication brand name, and add them to the list of filtered terms, if the relevant medications are already included in the list of filtered terms, you should not suggest them again.
+- Example: if found "Clexane", you should suggest "Enoxaparin" as the generic name, and add it to the list of filtered terms.
 
 IMPORTANT: All SNOMED-CT terms and codes (ConceptIDs) that you provide must be based on the latest SNOMED CT description snapshot. Only use terms and codes that exist in the current SNOMED CT description snapshot file. Do not generate or suggest codes that are not present in the latest SNOMED CT description snapshot. Ensure that all ConceptIDs you provide correspond to valid, active SNOMED CT concepts from the most recent description snapshot.
 
@@ -192,8 +201,8 @@ def generate_summary(doctors_text):
 
 def generate_tags(doctors_text):
     # API follows the container name deployed for cTAKES REST service in the server environment
-    # url = 'http://localhost:8080/ctakes-web-rest/service/analyze' #dev
-    url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze' #prod
+    url = 'http://localhost:8080/ctakes-web-rest/service/analyze' #dev
+    # url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze' #prod
 
     params = {'pipeline': 'Default'}
     headers = {'cache-control': 'no-cache'}
@@ -254,26 +263,84 @@ def parse_ctakes_to_json(json_output):
         "medications": []
     }
 
-    used_codes = set()
+    used_codes = set()  # Track codes as strings for consistent comparison
 
+    # Debug: Check what keys are in the JSON output
+    print(f"cTAKES JSON keys: {list(json_output.keys()) if isinstance(json_output, dict) else 'Not a dict'}")
+    
     for ctakes_key, output_key in category_map.items():
         if ctakes_key in json_output and isinstance(json_output[ctakes_key], list):
+            print(f"Processing {ctakes_key} -> {output_key}, found {len(json_output[ctakes_key])} mentions")
             codes = set()
+            mentions_processed = 0
+            codes_found = 0
+            codes_not_in_desc = 0
+            
             for mention in json_output[ctakes_key]:
                 if isinstance(mention, dict) and "conceptAttributes" in mention:
                     if mention.get("polarity") == 0:
                         continue  # Skip negated mentions
+                    mentions_processed += 1
                     for attr in mention.get("conceptAttributes", []):
                         if attr.get("codingScheme") == "SNOMEDCT_US":
                             code = attr.get("code")
-                            if code and code not in used_codes:
-                                term = code_to_term.get(str(code), "Unknown")
-                                if term != "Unknown":
-                                    codes.add((str(code), term))  # Store as tuple
-                                used_codes.add(code)
+                            if not code:
+                                continue
+                            codes_found += 1
+                            # Convert to string for consistent comparison
+                            code_str = str(code)
+                            # Skip if code is already used (to prevent duplicates across categories)
+                            if code_str in used_codes:
+                                continue
+                            # Look up term in description file
+                            term = code_to_term.get(code_str, "Unknown")
+                            # Only add if term exists in description file
+                            if term != "Unknown":
+                                codes.add((code_str, term))  # Store as tuple
+                                used_codes.add(code_str)  # Mark as used
+                            else:
+                                codes_not_in_desc += 1
+                                print(f"  Code {code_str} not found in description file")
+            
+            print(f"  {output_key}: {mentions_processed} mentions processed, {codes_found} codes found, {codes_not_in_desc} not in desc, {len(codes)} added to result")
             result[output_key] = sorted(list(codes), key=lambda x: x[0])  # Sort by code
-
+        else:
+            print(f"  {ctakes_key} not found in JSON or not a list")
+    
+    print("Result from Ctakes:", result, "\n")
     return json.dumps(result)
+
+def fuzzy_search_term(search_term, threshold=80):
+    """
+    Perform fuzzy search on the SNOMED CT description file to find the best matching term.
+    
+    Args:
+        search_term (str): The term to search for
+        threshold (int): Minimum similarity score (0-100) to consider a match. Default 80.
+    
+    Returns:
+        tuple: (matched_term, code, score) if match found above threshold, else (None, None, 0)
+    """
+    if not search_term or not isinstance(search_term, str):
+        return None, None, 0
+    
+    # Use rapidfuzz to find the best match
+    # scorer=fuzz.WRatio uses weighted ratio which is good for partial matches
+    result = process.extractOne(
+        search_term,
+        term_list,
+        scorer=fuzz.WRatio,
+        score_cutoff=threshold
+    )
+    
+    if result:
+        matched_term, score, _ = result
+        # Get the corresponding code from the mapping
+        matched_code = term_to_code.get(matched_term)
+        if matched_code:
+            return matched_term, matched_code, score
+    
+    return None, None, 0
 
 def filter_tags(clinical_text, generated_terms):
     contents = [
@@ -292,6 +359,8 @@ def filter_tags(clinical_text, generated_terms):
 
     filtered_and_enriched_tags = response.parsed
 
+    print("Result from LLM:", filtered_and_enriched_tags, "\n")
+
     #final filtering to identify the terms are in the SNOMED CT description file
 
     final_output = {
@@ -302,24 +371,57 @@ def filter_tags(clinical_text, generated_terms):
         "medications": []
     }
 
+    # Fuzzy search threshold (0-100, higher = more strict)
+    FUZZY_SEARCH_THRESHOLD = 80
+    
     for section in filtered_and_enriched_tags:
         seen_codes = set()  # Track codes already added to this section
         for item in filtered_and_enriched_tags[section]:
             code = item.get('code')
-            if not code:  # Skip if code is missing
-                continue
+            term = item.get('term', '')
+            
             # Convert code to string for consistent comparison
-            code_str = str(code)
+            code_str = str(code) if code else None
+            
             # Skip if code is already in this section (duplicate)
-            if code_str in seen_codes:
+            if code_str and code_str in seen_codes:
                 continue
-            # Only add items if the code exists in the SNOMED CT description file
-            if code_str in valid_concept_ids:
-                seen_codes.add(code_str)  # Mark as seen
-                # Get the term from the description file
-                item['term'] = code_to_term.get(code_str, "Unknown")
-                # Only add if we got a valid term (not "Unknown")
-                if item['term'] != "Unknown":
-                    final_output[section].append(item)
+            
+            matched_code = None
+            matched_term = None
+            similarity_score = 0
+            
+            # Case 1: Code exists and is valid
+            if code_str and code_str in valid_concept_ids:
+                matched_code = code_str
+                matched_term = code_to_term.get(code_str, "Unknown")
+                if matched_term != "Unknown":
+                    seen_codes.add(code_str)
+                    final_output[section].append({
+                        'code': matched_code,
+                        'term': matched_term
+                    })
+                    continue
+            
+            # Case 2: Code doesn't exist or is invalid, try fuzzy search on term
+            if term:
+                matched_term, matched_code, similarity_score = fuzzy_search_term(
+                    term, 
+                    threshold=FUZZY_SEARCH_THRESHOLD
+                )
+                
+                if matched_code and matched_code not in seen_codes:
+                    seen_codes.add(matched_code)
+                    final_output[section].append({
+                        'code': matched_code,
+                        'term': matched_term
+                    })
+                    print(f"  Fuzzy matched: '{term}' -> '{matched_term}' (code: {matched_code}, score: {similarity_score:.1f})")
+                elif matched_code:
+                    print(f"  Fuzzy match found but code already used: '{term}' -> '{matched_term}' (code: {matched_code}, score: {similarity_score:.1f})")
+                else:
+                    print(f"  No fuzzy match found for: '{term}' (best score below threshold {FUZZY_SEARCH_THRESHOLD})")
+
+    print("Final Output:", final_output, "\n")
 
     return final_output
