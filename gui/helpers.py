@@ -34,6 +34,8 @@ desc_df['conceptId'] = desc_df['conceptId'].astype(str)
 desc_df['typeID'] = desc_df['typeId'].astype(str)
 desc_df = desc_df[(desc_df['typeID'] == '900000000000003001')&(desc_df['active'] == 1) & (desc_df['languageCode'] == 'en')]# Prioritize Fully Specified Name (FSN) or preferred term
 code_to_term = dict(zip(desc_df['conceptId'], desc_df['term']))
+# Create a set of valid concept IDs for fast lookup
+valid_concept_ids = set(desc_df['conceptId'].values)
 
 # Define the prompt and schema_output
 clinical_text_refinement_prompt = """
@@ -85,6 +87,8 @@ There are five categoris of terms that will be extracted from Apache CTAKES, and
 5. Medications - keywords such as "Pharmaceutical", "Drug", "Medication", "Therapeutic Substance", "Substance", don't include any "unit of presentation", "qualifier value" or specifically "Medicinal Product" for this category
 
 Besides, after filtering out the terms that are not relevant to the clinical text summary, you should analysze the remaining terms filtered for the clinical text summary, and further suggest any additional SNOMED-CT Terms and ConceptID that are relevant to the clinical text summary based on the clininal text summary and the generated SNOMED-CT Terms and ConceptIDs from Apache CTAKES, and add them to the list of filtered terms.
+
+IMPORTANT: All SNOMED-CT terms and codes (ConceptIDs) that you provide must be based on the latest SNOMED CT description snapshot. Only use terms and codes that exist in the current SNOMED CT description snapshot file. Do not generate or suggest codes that are not present in the latest SNOMED CT description snapshot. Ensure that all ConceptIDs you provide correspond to valid, active SNOMED CT concepts from the most recent description snapshot.
 
 You should keep only those terms that are explanatory and directly relevant clinical text summary.
 
@@ -302,14 +306,20 @@ def filter_tags(clinical_text, generated_terms):
         seen_codes = set()  # Track codes already added to this section
         for item in filtered_and_enriched_tags[section]:
             code = item.get('code')
-            # Skip if code is already in this section (duplicate)
-            if code in seen_codes:
+            if not code:  # Skip if code is missing
                 continue
-            # Add to seen_codes and append to output
-            seen_codes.add(code)
-            # Add the term to the item if the code is in the SNOMED CT description file
-            if code in desc_df['conceptId'].values:
-                item['term'] = code_to_term.get(str(code), "Unknown")
-                final_output[section].append(item)
+            # Convert code to string for consistent comparison
+            code_str = str(code)
+            # Skip if code is already in this section (duplicate)
+            if code_str in seen_codes:
+                continue
+            # Only add items if the code exists in the SNOMED CT description file
+            if code_str in valid_concept_ids:
+                seen_codes.add(code_str)  # Mark as seen
+                # Get the term from the description file
+                item['term'] = code_to_term.get(code_str, "Unknown")
+                # Only add if we got a valid term (not "Unknown")
+                if item['term'] != "Unknown":
+                    final_output[section].append(item)
 
     return final_output
