@@ -311,5 +311,5 @@ def filter_tags(clinical_text, generated_terms):
             if code in desc_df['conceptId'].values:
                 item['term'] = code_to_term.get(str(code), "Unknown")
                 final_output[section].append(item)
-                
-    return response.parsed
+
+    return final_output
