@@ -3,7 +3,9 @@
  xmlns:mvc="http://www.springframework.org/schema/mvc" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
  xsi:schemaLocation=" http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd http://www.springframework.org/schema/context 
         http://www.springframework.org/schema/context/spring-context-4.2.xsd http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-4.2.xsd">
-<mvc:annotation-driven/>
+<mvc:annotation-driven>
+    <mvc:async-support default-timeout="300000" task-executor="asyncTaskExecutor"/>
+</mvc:annotation-driven>
 <context:component-scan base-package="org.apache.ctakes.rest.service" />
     <mvc:cors>
         <!-- allowed-origin can be set to specific valid URLs to tighten security -->
@@ -13,4 +15,14 @@
                      exposed-headers="Origin,Access-Control-Request-Method,Access-Control-Allow-Origin,Access-Control-Allow-Credentials"
                      allow-credentials="false"/>
 	</mvc:cors>
+    
+    <!-- Thread pool executor for async processing -->
+    <bean id="asyncTaskExecutor" class="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor">
+        <property name="corePoolSize" value="10"/>
+        <property name="maxPoolSize" value="50"/>
+        <property name="queueCapacity" value="100"/>
+        <property name="threadNamePrefix" value="ctakes-async-"/>
+        <property name="waitForTasksToCompleteOnShutdown" value="true"/>
+        <property name="awaitTerminationSeconds" value="60"/>
+    </bean>
 </beans>
