@@ -1,0 +1,35 @@
+[2025-12-11 12:31:58 +0800] [72157] [INFO] Starting gunicorn 23.0.0
+[2025-12-11 12:31:58 +0800] [72157] [INFO] Listening at: http://0.0.0.0:8082 (72157)
+[2025-12-11 12:31:58 +0800] [72157] [INFO] Using worker: uvicorn.workers.UvicornWorker
+[2025-12-11 12:31:58 +0800] [72227] [INFO] Booting worker with pid: 72227
+[2025-12-11 12:31:58 +0800] [72228] [INFO] Booting worker with pid: 72228
+[2025-12-11 12:31:58 +0800] [72229] [INFO] Booting worker with pid: 72229
+[2025-12-11 12:31:58 +0800] [72230] [INFO] Booting worker with pid: 72230
+[2025-12-11 12:31:58 +0800] [72231] [INFO] Booting worker with pid: 72231
+[2025-12-11 12:31:58 +0800] [72232] [INFO] Booting worker with pid: 72232
+[2025-12-11 12:31:58 +0800] [72233] [INFO] Booting worker with pid: 72233
+[2025-12-11 12:31:58 +0800] [72234] [INFO] Booting worker with pid: 72234
+[2025-12-11 12:32:04 +0800] [72234] [INFO] Started server process [72234]
+[2025-12-11 12:32:04 +0800] [72234] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72228] [INFO] Started server process [72228]
+[2025-12-11 12:32:04 +0800] [72228] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72234] [INFO] Application startup complete.
+[2025-12-11 12:32:04 +0800] [72228] [INFO] Application startup complete.
+[2025-12-11 12:32:04 +0800] [72231] [INFO] Started server process [72231]
+[2025-12-11 12:32:04 +0800] [72231] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72231] [INFO] Application startup complete.
+[2025-12-11 12:32:04 +0800] [72230] [INFO] Started server process [72230]
+[2025-12-11 12:32:04 +0800] [72230] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72230] [INFO] Application startup complete.
+[2025-12-11 12:32:04 +0800] [72229] [INFO] Started server process [72229]
+[2025-12-11 12:32:04 +0800] [72229] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72229] [INFO] Application startup complete.
+[2025-12-11 12:32:04 +0800] [72233] [INFO] Started server process [72233]
+[2025-12-11 12:32:04 +0800] [72233] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72233] [INFO] Application startup complete.
+[2025-12-11 12:32:04 +0800] [72232] [INFO] Started server process [72232]
+[2025-12-11 12:32:04 +0800] [72232] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72232] [INFO] Application startup complete.
+[2025-12-11 12:32:04 +0800] [72227] [INFO] Started server process [72227]
+[2025-12-11 12:32:04 +0800] [72227] [INFO] Waiting for application startup.
+[2025-12-11 12:32:04 +0800] [72227] [INFO] Application startup complete.
