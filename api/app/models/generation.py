@@ -27,7 +27,10 @@ class SNOMEDTermsResponse(BaseModel):
     anatomical_sites: list[SNOMEDTerm] = []
     procedures: list[SNOMEDTerm] = []
     symptoms: list[SNOMEDTerm] = []
-    diagnosis: list[SNOMEDTerm] = []
+    diagnosis: dict = {
+        "communicable_disease": list[SNOMEDTerm],
+        "non_communicable_disease": list[SNOMEDTerm]
+    }
     medications: list[SNOMEDTerm] = []
 
 

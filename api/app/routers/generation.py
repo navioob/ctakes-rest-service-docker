@@ -67,7 +67,7 @@ async def generate_terms(
             anatomical_sites=[SNOMEDTerm(**item) for item in filtered_terms.get("anatomical_sites", [])],
             procedures=[SNOMEDTerm(**item) for item in filtered_terms.get("procedures", [])],
             symptoms=[SNOMEDTerm(**item) for item in filtered_terms.get("symptoms", [])],
-            diagnosis=[SNOMEDTerm(**item) for item in filtered_terms.get("diagnosis", [])],
+            diagnosis={"communicable_disease": [SNOMEDTerm(**item) for item in filtered_terms.get("diagnosis", {}).get("communicable_disease", [])], "non_communicable_disease": [SNOMEDTerm(**item) for item in filtered_terms.get("diagnosis", {}).get("non_communicable_disease", [])]},
             medications=[SNOMEDTerm(**item) for item in filtered_terms.get("medications", [])]
         )
         
