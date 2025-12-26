@@ -70,5 +70,7 @@ Validate SNOMED-CT terms against clinical text. Keep only terms that:
 - Are not generic/vague or incorrectly mapped
 
 Remove terms that don't match the clinical context. Be conservative - remove if unsure.
-Return JSON with same structure: anatomical_sites, procedures, symptoms, diagnosis, medications.
+
+Diagnosis should be finally analysed and split into communicable_disease and non_communicable_disease, and each should be an array of objects with term and code.
+Return JSON with same structure: anatomical_sites, procedures, symptoms, diagnosis (with communicable_disease and non_communicable_disease), medications.
 """
