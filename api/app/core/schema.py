@@ -243,14 +243,12 @@ final_validation_schema_output = {
             },
         },
         "diagnosis": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "communicable_disease": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}}, 
-                    "non_communicable_disease": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}},
-                "required": ["communicable_disease", "non_communicable_disease"]},
+            "type": "object",
+            "properties": {
+                "communicable_disease": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}}, 
+                "non_communicable_disease": {"type": "array", "items": {"type": "object", "properties": {"term": {"type": "string"}, "code": {"type": "string"}}, "required": ["term", "code"]}},
             },
+            "required": ["communicable_disease", "non_communicable_disease"]
         },
         "medications": {
             "type": "array",

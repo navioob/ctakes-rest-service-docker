@@ -117,11 +117,13 @@ async def ctakes_health(
         parsed_terms = json.loads(parsed_terms_json)
         
         # Count total terms
+        diagnosis_list = parsed_terms.get("diagnosis", [])
+        diagnosis_count = len(diagnosis_list) if isinstance(diagnosis_list, list) else 0
         total_terms = (
             len(parsed_terms.get("anatomical_sites", [])) +
             len(parsed_terms.get("procedures", [])) +
             len(parsed_terms.get("symptoms", [])) +
-            len(parsed_terms.get("diagnosis", [])) +
+            diagnosis_count +
             len(parsed_terms.get("medications", []))
         )
         
@@ -137,11 +139,20 @@ async def ctakes_health(
                 return item
             return item
         
+        # For health check, cTAKES returns diagnosis as array, so we put all in non_communicable_disease
+        # (since we don't have LLM filtering here to split them)
+        diagnosis_list = parsed_terms.get("diagnosis", [])
+        if not isinstance(diagnosis_list, list):
+            diagnosis_list = []
+        
         terms_response = SNOMEDTermsResponse(
             anatomical_sites=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("anatomical_sites", [])],
             procedures=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("procedures", [])],
             symptoms=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("symptoms", [])],
-            diagnosis=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("diagnosis", [])],
+            diagnosis={
+                "communicable_disease": [],
+                "non_communicable_disease": [SNOMEDTerm(**convert_to_dict(item)) for item in diagnosis_list]
+            },
             medications=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("medications", [])]
         )
         

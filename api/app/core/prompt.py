@@ -71,6 +71,11 @@ Validate SNOMED-CT terms against clinical text. Keep only terms that:
 
 Remove terms that don't match the clinical context. Be conservative - remove if unsure.
 
-Diagnosis should be finally analysed and split into communicable_disease and non_communicable_disease, and each should be an array of objects with term and code.
-Return JSON with same structure: anatomical_sites, procedures, symptoms, diagnosis (with communicable_disease and non_communicable_disease), medications.
+CRITICAL: Diagnosis MUST be split into two categories:
+1. communicable_disease: Diseases that can be transmitted from person to person (e.g., infections, viral diseases, bacterial diseases, STDs, tuberculosis, COVID-19, influenza, hepatitis, etc.)
+2. non_communicable_disease: Diseases that cannot be transmitted (e.g., diabetes, hypertension, heart disease, cancer, autoimmune disorders, genetic conditions, etc.)
+
+If the input diagnosis is an array, you MUST analyze each diagnosis term and categorize it into either communicable_disease or non_communicable_disease based on whether it is transmissible.
+
+Return JSON with structure: anatomical_sites (array), procedures (array), symptoms (array), diagnosis (object with communicable_disease array and non_communicable_disease array), medications (array).
 """

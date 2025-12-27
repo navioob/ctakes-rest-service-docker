@@ -329,12 +329,43 @@ async def validate_final_output(clinical_text, final_output):
         validated_output = response.parsed
         
         # Ensure all sections exist even if empty
-        for section in ["anatomical_sites", "procedures", "symptoms", "diagnosis", "medications"]:
+        for section in ["anatomical_sites", "procedures", "symptoms", "medications"]:
             if section not in validated_output:
                 validated_output[section] = []
+        
+        # Handle diagnosis - schema should enforce it's an object, but verify
+        if "diagnosis" not in validated_output:
+            validated_output["diagnosis"] = {
+                "communicable_disease": [],
+                "non_communicable_disease": []
+            }
+        elif not isinstance(validated_output["diagnosis"], dict):
+            # This shouldn't happen if schema is enforced, but handle it just in case
+            # Convert array to split structure as fallback
+            if isinstance(validated_output["diagnosis"], list):
+                validated_output["diagnosis"] = {
+                    "communicable_disease": [],
+                    "non_communicable_disease": validated_output["diagnosis"]
+                }
+            else:
+                validated_output["diagnosis"] = {
+                    "communicable_disease": [],
+                    "non_communicable_disease": []
+                }
+        
+        # Ensure both sub-arrays exist
+        if "communicable_disease" not in validated_output["diagnosis"]:
+            validated_output["diagnosis"]["communicable_disease"] = []
+        if "non_communicable_disease" not in validated_output["diagnosis"]:
+            validated_output["diagnosis"]["non_communicable_disease"] = []
         
         return validated_output
     except Exception as e:
         print(f"Error in final validation: {e}")
-        # Return original output if validation fails
+        # If validation fails, convert diagnosis from array to split structure before returning
+        if isinstance(final_output.get("diagnosis"), list):
+            final_output["diagnosis"] = {
+                "communicable_disease": [],
+                "non_communicable_disease": final_output["diagnosis"]
+            }
         return final_output

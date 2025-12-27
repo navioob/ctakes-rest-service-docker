@@ -171,6 +171,7 @@ def test_generate_terms_endpoint(text) -> bool:
                     print(f"  {category}: {count} terms")
             
             print(f"Total terms extracted: {total}")
+            print(f"Response: {json.dumps(data, indent=2)}")
             return True
         else:
             print_error(f"Generate terms endpoint failed with status {response.status_code}")
