@@ -1,4 +1,4 @@
-from .generation import GenerateNoteRequest, GenerateNoteResponse, GenerateTermsRequest, SNOMEDTerm, SNOMEDTermsResponse, GenerateTermsResponse
+from .generation import GenerateNoteRequest, GenerateNoteResponse, GenerateTermsRequest, SNOMEDTerm, SNOMEDTermsResponse, GenerateTermsResponse, DiagnosisResponse
 
 __all__ = [
     "GenerateNoteRequest",
@@ -6,5 +6,6 @@ __all__ = [
     "GenerateTermsRequest",
     "SNOMEDTerm",
     "SNOMEDTermsResponse",
-    "GenerateTermsResponse"
+    "GenerateTermsResponse",
+    "DiagnosisResponse"
 ]
