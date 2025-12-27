@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 import json
-from app.models import GenerateNoteRequest, GenerateNoteResponse, GenerateTermsRequest, GenerateTermsResponse, SNOMEDTerm, SNOMEDTermsResponse
+from app.models import GenerateNoteRequest, GenerateNoteResponse, GenerateTermsRequest, GenerateTermsResponse, SNOMEDTerm, SNOMEDTermsResponse, DiagnosisResponse
 from app.core.functions import (
     generate_summary,
     generate_tags,
@@ -63,11 +63,17 @@ async def generate_terms(
         filtered_terms = await filter_tags(request.text, parsed_terms)
         
         # Convert to response format
+        diagnosis_data = filtered_terms.get("diagnosis", {})
+        diagnosis_response = DiagnosisResponse(
+            communicable_disease=[SNOMEDTerm(**item) for item in diagnosis_data.get("communicable_disease", [])],
+            non_communicable_disease=[SNOMEDTerm(**item) for item in diagnosis_data.get("non_communicable_disease", [])]
+        )
+        
         terms_response = SNOMEDTermsResponse(
             anatomical_sites=[SNOMEDTerm(**item) for item in filtered_terms.get("anatomical_sites", [])],
             procedures=[SNOMEDTerm(**item) for item in filtered_terms.get("procedures", [])],
             symptoms=[SNOMEDTerm(**item) for item in filtered_terms.get("symptoms", [])],
-            diagnosis={"communicable_disease": [SNOMEDTerm(**item) for item in filtered_terms.get("diagnosis", {}).get("communicable_disease", [])], "non_communicable_disease": [SNOMEDTerm(**item) for item in filtered_terms.get("diagnosis", {}).get("non_communicable_disease", [])]},
+            diagnosis=diagnosis_response,
             medications=[SNOMEDTerm(**item) for item in filtered_terms.get("medications", [])]
         )
         
@@ -145,14 +151,16 @@ async def ctakes_health(
         if not isinstance(diagnosis_list, list):
             diagnosis_list = []
         
+        diagnosis_response = DiagnosisResponse(
+            communicable_disease=[],
+            non_communicable_disease=[SNOMEDTerm(**convert_to_dict(item)) for item in diagnosis_list]
+        )
+        
         terms_response = SNOMEDTermsResponse(
             anatomical_sites=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("anatomical_sites", [])],
             procedures=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("procedures", [])],
             symptoms=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("symptoms", [])],
-            diagnosis={
-                "communicable_disease": [],
-                "non_communicable_disease": [SNOMEDTerm(**convert_to_dict(item)) for item in diagnosis_list]
-            },
+            diagnosis=diagnosis_response,
             medications=[SNOMEDTerm(**convert_to_dict(item)) for item in parsed_terms.get("medications", [])]
         )
         

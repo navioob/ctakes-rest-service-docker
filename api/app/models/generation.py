@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Request/Response Models
 class GenerateNoteRequest(BaseModel):
@@ -22,15 +22,18 @@ class SNOMEDTerm(BaseModel):
     code: str
 
 
+class DiagnosisResponse(BaseModel):
+    """Schema for diagnosis split into communicable and non-communicable diseases."""
+    communicable_disease: list[SNOMEDTerm] = []
+    non_communicable_disease: list[SNOMEDTerm] = []
+
+
 class SNOMEDTermsResponse(BaseModel):
     """Response schema for SNOMED-CT terms grouped by category."""
     anatomical_sites: list[SNOMEDTerm] = []
     procedures: list[SNOMEDTerm] = []
     symptoms: list[SNOMEDTerm] = []
-    diagnosis: dict = {
-        "communicable_disease": list[SNOMEDTerm],
-        "non_communicable_disease": list[SNOMEDTerm]
-    }
+    diagnosis: DiagnosisResponse = Field(default_factory=DiagnosisResponse)
     medications: list[SNOMEDTerm] = []
 
 
