@@ -1,4 +1,3 @@
-import requests
 import json
 
 import os
@@ -28,12 +27,33 @@ term_list = list(desc_df['term'].values)
 term_to_code = dict(zip(desc_df['term'], desc_df['conceptId']))
 
 async def call_llm(contents, config):
-    """Async LLM call using native async API."""
-    return await llm_client.aio.models.generate_content(
-        model='gemini-2.5-flash',
+    """Async LLM call using native async API.
+    
+    Returns:
+        tuple: (response, token_usage_dict) where token_usage_dict contains
+               {'input_token': int, 'output_token': int}
+    """
+    response = await llm_client.aio.models.generate_content(
+        model='gemini-3-flash-preview',
         contents=contents,
         config=config
     )
+    
+    # Extract token usage from response
+    input_tokens = 0
+    output_tokens = 0
+    
+    if hasattr(response, 'usage_metadata'):
+        usage = response.usage_metadata
+        input_tokens = getattr(usage, 'prompt_token_count', 0) or 0
+        output_tokens = getattr(usage, 'candidates_token_count', 0) or 0
+    
+    token_usage = {
+        'input_token': input_tokens,
+        'output_token': output_tokens
+    }
+    
+    return response, token_usage
 
 async def generate_summary(doctors_text):
     contents = [
@@ -45,10 +65,10 @@ async def generate_summary(doctors_text):
         temperature=0.0,
         response_mime_type='application/json',
         response_json_schema=clinical_text_refinement_schema_output,
-        thinking_config=types.ThinkingConfig(thinking_budget=500),
+        thinking_config=types.ThinkingLevel.MINIMAL,
     )
-    response = await call_llm(contents, config)
-    return response.parsed['text']
+    response, token_usage = await call_llm(contents, config)
+    return response.parsed['text'], token_usage
 
 
 async def generate_tags(doctors_text):
@@ -207,8 +227,11 @@ async def filter_tags(clinical_text, generated_terms):
         generated_terms: Generated terms from cTAKES (JSON string)
     
     Returns:
-        Validated output with filtered and enriched SNOMED-CT terms
+        tuple: (validated_output, tokens_used_dict) where tokens_used_dict contains
+               token usage for filtering and validation steps
     """
+    tokens_used = {}
+    
     # Step 1: LLM generates filtered and enriched terms
     contents = [
         types.Part.from_text(text=f"Clinical Text: {clinical_text}"),
@@ -220,10 +243,11 @@ async def filter_tags(clinical_text, generated_terms):
         temperature=0.0,
         response_mime_type='application/json',
         response_json_schema=tags_filtering_and_enrichment_schema_output,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
+        thinking_config=types.ThinkingLevel.MINIMAL,
     )
-    response = await call_llm(contents, config)
+    response, token_usage = await call_llm(contents, config)
     filtered_and_enriched_tags = response.parsed
+    tokens_used['filter_tags'] = token_usage
 
     print("Result from LLM:", filtered_and_enriched_tags, "\n")
 
@@ -290,11 +314,12 @@ async def filter_tags(clinical_text, generated_terms):
     print("Final Output after mapping/fuzzy search:", final_output, "\n")
 
     # Step 3: Final validation layer - LLM counter-check if outputs make sense with clinical text
-    validated_output = await validate_final_output(clinical_text, final_output)
+    validated_output, validation_token_usage = await validate_final_output(clinical_text, final_output)
+    tokens_used['validate_final_output'] = validation_token_usage
     
     print("Final Validated Output:", validated_output, "\n")
 
-    return validated_output
+    return validated_output, tokens_used
 
 async def validate_final_output(clinical_text, final_output):
     """
@@ -306,7 +331,8 @@ async def validate_final_output(clinical_text, final_output):
         final_output (dict): The final output after mapping and fuzzy search
     
     Returns:
-        dict: Validated output with only clinically relevant terms
+        tuple: (validated_output, token_usage_dict) where token_usage_dict contains
+               {'input_token': int, 'output_token': int}
     """
     # Compact JSON format to minimize tokens
     compact_json = json.dumps(final_output, separators=(',', ':'))
@@ -321,11 +347,11 @@ async def validate_final_output(clinical_text, final_output):
         temperature=0.0,
         response_mime_type='application/json',
         response_json_schema=final_validation_schema_output,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),  # Reduced from 500
+        thinking_config=types.ThinkingLevel.MINIMAL,
     )
     
     try:
-        response = await call_llm(contents, config)
+        response, token_usage = await call_llm(contents, config)
         validated_output = response.parsed
         
         # Ensure all sections exist even if empty
@@ -359,7 +385,7 @@ async def validate_final_output(clinical_text, final_output):
         if "non_communicable_disease" not in validated_output["diagnosis"]:
             validated_output["diagnosis"]["non_communicable_disease"] = []
         
-        return validated_output
+        return validated_output, token_usage
     except Exception as e:
         print(f"Error in final validation: {e}")
         # If validation fails, convert diagnosis from array to split structure before returning
@@ -368,4 +394,5 @@ async def validate_final_output(clinical_text, final_output):
                 "communicable_disease": [],
                 "non_communicable_disease": final_output["diagnosis"]
             }
-        return final_output
+        # Return zero token usage on error
+        return final_output, {'input_token': 0, 'output_token': 0}

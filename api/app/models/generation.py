@@ -1,4 +1,12 @@
 from pydantic import BaseModel, Field
+from typing import Dict, Any
+
+# Token Usage Models
+class TokenUsage(BaseModel):
+    """Schema for token usage information."""
+    input_token: int
+    output_token: int
+
 
 # Request/Response Models
 class GenerateNoteRequest(BaseModel):
@@ -9,6 +17,7 @@ class GenerateNoteRequest(BaseModel):
 class GenerateNoteResponse(BaseModel):
     """Response schema for generated clinical note."""
     text: str
+    tokens_used: Dict[str, TokenUsage] = Field(default_factory=dict)
 
 
 class GenerateTermsRequest(BaseModel):
@@ -40,3 +49,4 @@ class SNOMEDTermsResponse(BaseModel):
 class GenerateTermsResponse(BaseModel):
     """Response schema for generated SNOMED-CT terms."""
     terms: SNOMEDTermsResponse
+    tokens_used: Dict[str, TokenUsage] = Field(default_factory=dict)

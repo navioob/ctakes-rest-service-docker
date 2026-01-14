@@ -7,3 +7,6 @@ data
 .venv
 .env
 /gui/sct2_Description_Snapshot-en_INT_20250901.txt
+*.csv
+*.ipynb
+*.xlsx

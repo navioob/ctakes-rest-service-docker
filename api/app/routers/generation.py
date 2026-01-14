@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 import json
-from app.models import GenerateNoteRequest, GenerateNoteResponse, GenerateTermsRequest, GenerateTermsResponse, SNOMEDTerm, SNOMEDTermsResponse, DiagnosisResponse
+from app.models import GenerateNoteRequest, GenerateNoteResponse, GenerateTermsRequest, GenerateTermsResponse, SNOMEDTerm, SNOMEDTermsResponse, DiagnosisResponse, TokenUsage
 from app.core.functions import (
     generate_summary,
     generate_tags,
@@ -27,8 +27,11 @@ async def generate_note(
         Generated clinical summary
     """
     try:
-        summary = await generate_summary(request.text)
-        return GenerateNoteResponse(text=summary)
+        summary, token_usage = await generate_summary(request.text)
+        tokens_used = {
+            'generate_summary': TokenUsage(**token_usage)
+        }
+        return GenerateNoteResponse(text=summary, tokens_used=tokens_used)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -53,6 +56,8 @@ async def generate_terms(
         Filtered and enriched SNOMED-CT terms grouped by category
     """
     try:
+        tokens_used = {}
+        
         # Generate tags from cTAKES (async - can use pre-generated summary)
         ctakes_response = await generate_tags(request.text)
         
@@ -60,7 +65,11 @@ async def generate_terms(
         parsed_terms = parse_ctakes_to_json(ctakes_response)
         
         # Filter and enrich terms (async)
-        filtered_terms = await filter_tags(request.text, parsed_terms)
+        filtered_terms, filter_tokens_used = await filter_tags(request.text, parsed_terms)
+        
+        # Convert token usage to TokenUsage objects
+        for key, value in filter_tokens_used.items():
+            tokens_used[key] = TokenUsage(**value)
         
         # Convert to response format
         diagnosis_data = filtered_terms.get("diagnosis", {})
@@ -77,7 +86,7 @@ async def generate_terms(
             medications=[SNOMEDTerm(**item) for item in filtered_terms.get("medications", [])]
         )
         
-        return GenerateTermsResponse(terms=terms_response)
+        return GenerateTermsResponse(terms=terms_response, tokens_used=tokens_used)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -110,8 +119,11 @@ async def ctakes_health(
         Refer to IR for possible embolectomy"""
     
     try:
+        tokens_used = {}
+        
         # Generate summary (async)
-        clinical_summary = await generate_summary(test_text)
+        clinical_summary, summary_token_usage = await generate_summary(test_text)
+        tokens_used['generate_summary'] = TokenUsage(**summary_token_usage)
         
         # Generate tags from cTAKES (async)
         ctakes_response = await generate_tags(clinical_summary)
@@ -168,7 +180,8 @@ async def ctakes_health(
             "status": status,
             "alive": is_alive,
             "total_terms": total_terms,
-            "terms": terms_response
+            "terms": terms_response,
+            "tokens_used": {k: v.dict() for k, v in tokens_used.items()}
         }
     except Exception as e:
         # If there's an error, cTAKES is not alive
@@ -177,5 +190,6 @@ async def ctakes_health(
             "alive": False,
             "total_terms": 0,
             "error": str(e),
-            "terms": SNOMEDTermsResponse()
+            "terms": SNOMEDTermsResponse(),
+            "tokens_used": {k: v.dict() for k, v in tokens_used.items()} if tokens_used else {}
         }
