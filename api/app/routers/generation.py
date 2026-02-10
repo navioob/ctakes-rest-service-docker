@@ -1,6 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends
 import json
-from app.models import GenerateNoteRequest, GenerateNoteResponse, GenerateTermsRequest, GenerateTermsResponse, SNOMEDTerm, SNOMEDTermsResponse, DiagnosisResponse, TokenUsage
+from app.models import (
+    GenerateNoteRequest, 
+    GenerateNoteResponse, 
+    GenerateTermsRequest, 
+    GenerateTermsResponse, 
+    SNOMEDTerm, 
+    SNOMEDTermsResponse, 
+    DiagnosisResponse, 
+    TokenUsage
+)
 from app.core.functions import (
     generate_summary,
     generate_tags,
@@ -9,22 +18,19 @@ from app.core.functions import (
 )
 from app.core.auth import verify_token
 
+# Initialize the router for generation-related endpoints
 router = APIRouter(prefix="/generate", tags=["Generation"])
 
-# Endpoints
 @router.post("/note", response_model=GenerateNoteResponse)
 async def generate_note(
     request: GenerateNoteRequest,
     token: str = Depends(verify_token)
 ):
     """
-    Generate clinical note summary from raw doctor's text.
+    Refines raw doctor's clinical notes into a professional narrative summary.
     
-    Args:
-        request: Request containing raw doctor's clinical notes
-    
-    Returns:
-        Generated clinical summary
+    This is typically the first step in the pipeline, providing a cleaner 
+    input for subsequent SNOMED-CT term extraction.
     """
     try:
         summary, token_usage = await generate_summary(request.text)
@@ -42,36 +48,32 @@ async def generate_terms(
     token: str = Depends(verify_token)
 ):
     """
-    Generate SNOMED-CT terms from clinical text.
+    Extracts, filters, and enriches SNOMED-CT terms from clinical text.
     
-    This endpoint:
-    1. Calls cTAKES to extract SNOMED-CT terms based on the input enriched clinical text
-    2. Filters and enriches terms using LLM
-    3. Validates terms against SNOMED CT description file
-    
-    Args:
-        request: Request containing clinical text
-    
-    Returns:
-        Filtered and enriched SNOMED-CT terms grouped by category
+    Pipeline:
+    1. Send text to cTAKES for initial entity recognition.
+    2. Parse cTAKES output into a structured format.
+    3. Use LLM to filter irrelevant terms and suggest missing ones.
+    4. Validate all terms against a local SNOMED-CT snapshot using fuzzy matching.
+    5. Final LLM validation and diagnosis categorization.
     """
     try:
         tokens_used = {}
         
-        # Generate tags from cTAKES (async - can use pre-generated summary)
+        # 1. Generate raw tags from cTAKES
         ctakes_response = await generate_tags(request.text)
         
-        # Parse cTAKES response (synchronous - fast operation)
-        parsed_terms = parse_ctakes_to_json(ctakes_response)
+        # 2. Parse cTAKES response into simplified JSON
+        parsed_terms_json = parse_ctakes_to_json(ctakes_response)
         
-        # Filter and enrich terms (async)
-        filtered_terms, filter_tokens_used = await filter_tags(request.text, parsed_terms)
+        # 3, 4, 5. Filter, enrich, and validate terms using LLM and SNOMED snapshot
+        filtered_terms, filter_tokens_used = await filter_tags(request.text, parsed_terms_json)
         
-        # Convert token usage to TokenUsage objects
+        # Format token usage for the response
         for key, value in filter_tokens_used.items():
             tokens_used[key] = TokenUsage(**value)
         
-        # Convert to response format
+        # Map filtered terms to the Pydantic response models
         diagnosis_data = filtered_terms.get("diagnosis", {})
         diagnosis_response = DiagnosisResponse(
             communicable_disease=[SNOMEDTerm(**item) for item in diagnosis_data.get("communicable_disease", [])],
@@ -96,45 +98,29 @@ async def ctakes_health(
     token: str = Depends(verify_token)
 ):
     """
-    Health check endpoint for cTAKES service.
+    Verifies the health of the underlying cTAKES service.
     
-    Uses a static test text to verify if cTAKES is alive and responding.
-    - If cTAKES returns any terms: service is alive
-    - If cTAKES returns empty: service is not responding/alive
-    
-    Returns:
-        Health status and extracted terms from cTAKES
+    Runs a sample clinical text through the pipeline to ensure that 
+    the cTAKES container is up and correctly extracting terms.
     """
-    # Static test text
     test_text = """Swollen LL, limited mobility, pain and redness over R LL. Possible PE post THR and TKR. 
-
-        IV Streptokinase stat
-
-        IV NS 500ml run fast
-
-        SC Clean 200U stat
-
-
-
-        Refer to IR for possible embolectomy"""
+        IV Streptokinase stat. IV NS 500ml run fast. SC Clean 200U stat. Refer to IR for possible embolectomy"""
     
     try:
         tokens_used = {}
         
-        # Generate summary (async)
+        # Generate summary for the test text
         clinical_summary, summary_token_usage = await generate_summary(test_text)
         tokens_used['generate_summary'] = TokenUsage(**summary_token_usage)
         
-        # Generate tags from cTAKES (async)
+        # Call cTAKES
         ctakes_response = await generate_tags(clinical_summary)
         
-        # Parse cTAKES response (returns JSON string)
+        # Parse results
         parsed_terms_json = parse_ctakes_to_json(ctakes_response)
-        
-        # Parse JSON string to dict
         parsed_terms = json.loads(parsed_terms_json)
         
-        # Count total terms
+        # Calculate total terms found to determine "aliveness"
         diagnosis_list = parsed_terms.get("diagnosis", [])
         diagnosis_count = len(diagnosis_list) if isinstance(diagnosis_list, list) else 0
         total_terms = (
@@ -145,24 +131,16 @@ async def ctakes_health(
             len(parsed_terms.get("medications", []))
         )
         
-        # Determine health status
         is_alive = total_terms > 0
         status = "alive" if is_alive else "not_responding"
         
-        # Convert to response format (parsed_terms contains lists like [code, term] after JSON deserialization)
+        # Helper to convert raw list/tuple terms to dict for Pydantic
         def convert_to_dict(item):
             if isinstance(item, (list, tuple)) and len(item) == 2:
                 return {'code': str(item[0]), 'term': str(item[1])}
-            elif isinstance(item, dict):
-                return item
             return item
         
-        # For health check, cTAKES returns diagnosis as array, so we put all in non_communicable_disease
-        # (since we don't have LLM filtering here to split them)
-        diagnosis_list = parsed_terms.get("diagnosis", [])
-        if not isinstance(diagnosis_list, list):
-            diagnosis_list = []
-        
+        # Format the health check response
         diagnosis_response = DiagnosisResponse(
             communicable_disease=[],
             non_communicable_disease=[SNOMEDTerm(**convert_to_dict(item)) for item in diagnosis_list]
@@ -184,7 +162,6 @@ async def ctakes_health(
             "tokens_used": {k: v.dict() for k, v in tokens_used.items()}
         }
     except Exception as e:
-        # If there's an error, cTAKES is not alive
         return {
             "status": "error",
             "alive": False,

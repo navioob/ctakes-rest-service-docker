@@ -1,9 +1,13 @@
 from dotenv import load_dotenv
 import json
 import os
-# Load environment variables from .env file
+
+# Load environment variables from .env file at the start of the application
 load_dotenv()
 
+# Configuration for Google LLM (Gemini/Vertex AI)
+# GOOGLE_APPLICATION_CREDENTIALS should contain the JSON string of the service account key
+# GOOGLE_APPLICATION_SCOPES should contain the required OAuth scopes
 llm_credentials = {
     "GOOGLE_APPLICATION_CREDENTIALS": json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
     "GOOGLE_APPLICATION_SCOPES": [os.getenv("GOOGLE_APPLICATION_SCOPES")]
