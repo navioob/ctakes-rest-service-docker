@@ -8,8 +8,8 @@ ROOT_DIR="$( cd "${SCRIPT_DIR}/.." && pwd )"
 cd "${SCRIPT_DIR}"
 
 # Image and container names
-IMAGE_NAME="ctakes-api"
-CONTAINER_NAME="ctakes-api-container"
+IMAGE_NAME="cne-api"
+CONTAINER_NAME="cne-api-container"
 NETWORK_NAME="backend"
 PORT=8082
 
