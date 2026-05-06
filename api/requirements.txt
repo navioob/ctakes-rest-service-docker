@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+gunicorn
+httpx
+google-genai
+google-generativeai
+google-auth
+python-dotenv
+bcrypt
+requests
