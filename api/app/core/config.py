@@ -4,7 +4,7 @@ import os
 import ast
 
 # Load environment variables from .env file at the start of the application
-load_dotenv()
+load_dotenv(override=True)
 
 # Configuration for Google LLM (Gemini/Vertex AI)
 # GOOGLE_APPLICATION_CREDENTIALS should contain the JSON string of the service account key
