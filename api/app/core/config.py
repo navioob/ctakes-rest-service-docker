@@ -11,7 +11,7 @@ load_dotenv(override=True)
 # GOOGLE_APPLICATION_SCOPES should contain the required OAuth scopes
 llm_credentials = {
     "GOOGLE_APPLICATION_CREDENTIALS": ast.literal_eval(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
-    "GOOGLE_APPLICATION_SCOPES": [ast.literal_eval(os.getenv("GOOGLE_APPLICATION_SCOPES"))]
+    "GOOGLE_APPLICATION_SCOPES": [(os.getenv("GOOGLE_APPLICATION_SCOPES"))]
 }
 
 # Snowstorm Configuration
