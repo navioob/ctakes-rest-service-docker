@@ -19,92 +19,72 @@ tags_filtering_and_enrichment_schema_output = {
     "properties": {
         "anatomical_sites": {
             "type": "array",
-            "description": "List of SNOMED-CT Terms and ConceptID for catergory anatomical_sites. Can be an empty list [].",
+            "description": "List of SNOMED-CT Terms for category anatomical_sites. Can be an empty list [].",
             "items": {
                 "type": "object",
                 "properties": {
                     "term": {
                         "type": "string",
-                        "description": "Description of SNOMED-CT Term for the ConceptID.",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "ConceptID for SNOMED-CT.",
+                        "description": "Description of SNOMED-CT Term.",
                     },
                 },
-                "required": ["term", "code"],
+                "required": ["term"],
             },
         },
         "procedures": {
             "type": "array",
-            "description": "List of SNOMED-CT Terms and ConceptID for catergory procedures. Can be an empty list [].",
+            "description": "List of SNOMED-CT Terms for category procedures. Can be an empty list [].",
             "items": {
                 "type": "object",
                 "properties": {
                     "term": {
                         "type": "string",
-                        "description": "Description of SNOMED-CT Term for the ConceptID.",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "ConceptID for SNOMED-CT.",
+                        "description": "Description of SNOMED-CT Term.",
                     },
                 },
-                "required": ["term", "code"],
+                "required": ["term"],
             },
         },
         "symptoms": {
             "type": "array",
-            "description": "List of SNOMED-CT Terms and ConceptID for catergory symptoms. Can be an empty list [].",
+            "description": "List of SNOMED-CT Terms for category symptoms. Can be an empty list [].",
             "items": {
                 "type": "object",
                 "properties": {
                     "term": {
                         "type": "string",
-                        "description": "Description of SNOMED-CT Term for the ConceptID.",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "ConceptID for SNOMED-CT.",
+                        "description": "Description of SNOMED-CT Term.",
                     },
                 },
-                "required": ["term", "code"],
+                "required": ["term"],
             },
         },
         "diagnosis": {
             "type": "array",
-            "description": "List of SNOMED-CT Terms and ConceptID for catergory diagnosis. Can be an empty list [].",
+            "description": "List of SNOMED-CT Terms for category diagnosis. Can be an empty list [].",
             "items": {
                 "type": "object",
                 "properties": {
                     "term": {
                         "type": "string",
-                        "description": "Description of SNOMED-CT Term for the ConceptID.",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "ConceptID for SNOMED-CT.",
+                        "description": "Description of SNOMED-CT Term.",
                     },
                 },
-                "required": ["term", "code"],
+                "required": ["term"],
             },
         },
         "medications": {
             "type": "array",
-            "description": "List of SNOMED-CT Terms and ConceptID for catergory Medications. Can be an empty list [].",
+            "description": "List of SNOMED-CT Terms for category Medications. Can be an empty list [].",
             "items": {
                 "type": "object",
                 "properties": {
                     "term": {
                         "type": "string",
-                        "description": "Description of SNOMED-CT Term for the ConceptID.",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "ConceptID for SNOMED-CT.",
+                        "description": "Description of SNOMED-CT Term.",
                     },
                 },
-                "required": ["term", "code"],
+                "required": ["term"],
             },
         },
     },

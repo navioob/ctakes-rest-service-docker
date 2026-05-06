@@ -12,3 +12,7 @@ llm_credentials = {
     "GOOGLE_APPLICATION_CREDENTIALS": json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
     "GOOGLE_APPLICATION_SCOPES": [os.getenv("GOOGLE_APPLICATION_SCOPES")]
 }
+
+# Snowstorm Configuration
+SNOWSTORM_URL = os.getenv("SNOWSTORM_URL")
+SNOWSTORM_BRANCH = os.getenv("SNOWSTORM_BRANCH")

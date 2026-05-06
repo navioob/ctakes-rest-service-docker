@@ -1,34 +1,13 @@
 import json
 
 import os
-import pandas as pd
-from rapidfuzz import fuzz, process
 import httpx
 
 from .prompt import clinical_text_refinement_prompt, tags_filtering_and_enrichment_prompt, final_validation_prompt
 from .schema import clinical_text_refinement_schema_output, tags_filtering_and_enrichment_schema_output, final_validation_schema_output
 from .llm import llm_client, types
 
-
-# Load SNOMED CT description file (adjust path to your Snapshot file)
-# Use absolute path based on this file's location
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-SNOMED_DESC_FILE = os.path.join(_current_dir, "data", "sct2_Description_Snapshot-en_INT_20250901.txt")
-
-# Load SNOMED CT descriptions into a DataFrame
-# This file contains the mapping between Concept IDs and their human-readable terms
-desc_df = pd.read_csv(SNOMED_DESC_FILE, sep='\t', usecols=['conceptId', 'term', 'typeId', 'active', 'languageCode'])
-desc_df['conceptId'] = desc_df['conceptId'].astype(str)
-desc_df['typeID'] = desc_df['typeId'].astype(str)
-
-# Filter for active English terms, prioritizing Fully Specified Names (FSN)
-desc_df = desc_df[(desc_df['typeID'] == '900000000000003001')&(desc_df['active'] == 1) & (desc_df['languageCode'] == 'en')]
-
-# Create lookup dictionaries for fast access
-code_to_term = dict(zip(desc_df['conceptId'], desc_df['term']))
-valid_concept_ids = set(desc_df['conceptId'].values)
-term_list = list(desc_df['term'].values)
-term_to_code = dict(zip(desc_df['term'], desc_df['conceptId']))
+from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH
 
 async def call_llm(contents, config):
     """
@@ -41,46 +20,57 @@ async def call_llm(contents, config):
     Returns:
         tuple: (response, token_usage_dict)
     """
-    response = await llm_client.aio.models.generate_content(
-        model='gemini-3-flash-preview',
-        contents=contents,
-        config=config
-    )
-    
-    # Extract token usage metadata from the response
-    input_tokens = 0
-    output_tokens = 0
-    
-    if hasattr(response, 'usage_metadata'):
-        usage = response.usage_metadata
-        input_tokens = getattr(usage, 'prompt_token_count', 0) or 0
-        output_tokens = getattr(usage, 'candidates_token_count', 0) or 0
-    
-    token_usage = {
-        'input_token': input_tokens,
-        'output_token': output_tokens
-    }
-    
-    return response, token_usage
+    try:
+        response = await llm_client.aio.models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=contents,
+            config=config
+        )
+        
+        # Extract token usage metadata from the response
+        input_tokens = 0
+        output_tokens = 0
+        
+        if hasattr(response, 'usage_metadata'):
+            usage = response.usage_metadata
+            input_tokens = getattr(usage, 'prompt_token_count', 0) or 0
+            output_tokens = getattr(usage, 'candidates_token_count', 0) or 0
+        
+        token_usage = {
+            'input_token': input_tokens,
+            'output_token': output_tokens
+        }
+        
+        return response, token_usage
+    except Exception as e:
+        print(f"LLM Call Error: {e}")
+        raise e
 
 async def generate_summary(doctors_text):
     """
     Step 1: Refine raw clinical notes into a professional narrative summary.
     Uses LLM with clinical_text_refinement_prompt.
     """
-    contents = [
-        types.Part.from_text(text=f"Raw text from the doctor's clinical notes written during triage or consultation: {doctors_text}"),
-    ]
-    
-    config = types.GenerateContentConfig(
-        system_instruction=types.Part.from_text(text=clinical_text_refinement_prompt),
-        temperature=0.0,
-        response_mime_type='application/json',
-        response_json_schema=clinical_text_refinement_schema_output,
-        thinking_config=types.ThinkingLevel.MINIMAL,
-    )
-    response, token_usage = await call_llm(contents, config)
-    return response.parsed['text'], token_usage
+    try:
+        contents = [
+            types.Part.from_text(text=f"Raw text from the doctor's clinical notes written during triage or consultation: {doctors_text}"),
+        ]
+        
+        config = types.GenerateContentConfig(
+            system_instruction=types.Part.from_text(text=clinical_text_refinement_prompt),
+            temperature=0.0,
+            response_mime_type='application/json',
+            response_json_schema=clinical_text_refinement_schema_output,
+            thinking_config=types.ThinkingConfig(
+                thinking_level=types.ThinkingLevel.MINIMAL
+            )
+        )
+        response, token_usage = await call_llm(contents, config)
+        return response.parsed['text'], token_usage
+    except Exception as e:
+        print(f"Error in generate_summary: {e}")
+        # Return original text as fallback and zero tokens
+        return doctors_text, {'input_token': 0, 'output_token': 0}
 
 
 async def generate_tags(doctors_text):
@@ -89,8 +79,8 @@ async def generate_tags(doctors_text):
     cTAKES identifies medical entities like symptoms, procedures, and medications.
     """
     # API follows the container name deployed for cTAKES REST service
-    url = 'http://localhost:8080/ctakes-web-rest/service/analyze' #dev
-    # url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze' #prod
+    # url = 'http://localhost:8083/ctakes-web-rest/service/analyze' #dev
+    url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze' #prod
 
     params = {'pipeline': 'Default'}
     headers = {'cache-control': 'no-cache'}
@@ -108,10 +98,75 @@ async def generate_tags(doctors_text):
         print(f"An error occurred: {e}")
         raise
 
-def parse_ctakes_to_json(json_output):
+async def snowstorm_search(term, section=None, limit=1, client=None):
+    """
+    Searches for a SNOMED CT concept using the Snowstorm Lite FHIR API ($expand).
+    Returns the preferred term and concept ID for the best match.
+    
+    Args:
+        term: The search string.
+        section: The clinical category (anatomical_sites, procedures, symptoms, diagnosis, medications).
+        limit: Number of results to return.
+        client: Optional httpx.AsyncClient for connection pooling.
+    """
+    if not term or not isinstance(term, str):
+        return None, None
+
+    # Map our internal sections to SNOMED CT hierarchy roots for ECL filtering
+    hierarchy_root_map = {
+        "anatomical_sites": "442083009", # Body structure
+        "procedures": "71388002",       # Procedure
+        "symptoms": "404684003",         # Clinical finding
+        "diagnosis": "64572001",         # Disease/Disorder
+        "medications": "105590001"       # Substance
+    }
+    
+    root_id = hierarchy_root_map.get(section)
+    
+    # Base FHIR expand URL
+    url = f"{SNOWSTORM_URL}/fhir/ValueSet/$expand"
+    
+    # Construct the ValueSet URL with ECL filter if a hierarchy root is known
+    vs_url = "http://snomed.info/sct?fhir_vs"
+    if root_id:
+        vs_url = f"http://snomed.info/sct?fhir_vs=ecl/<<{root_id}"
+
+    params = {
+        "url": vs_url,
+        "filter": term.strip(),
+        "count": limit,
+        "includeDesignations": "true"
+    }
+
+    try:
+        if client:
+            response = await client.get(url, params=params)
+        else:
+            async with httpx.AsyncClient(timeout=10.0) as local_client:
+                response = await local_client.get(url, params=params)
+                
+        response.raise_for_status()
+        data = response.json()
+        
+        # Parse the FHIR ValueSet expansion results
+        expansion = data.get("expansion", {})
+        contains = expansion.get("contains", [])
+        
+        if contains:
+            best_match = contains[0]
+            matched_code = best_match.get("code")
+            matched_term = best_match.get("display")
+            print(f"Matched term (FHIR): {matched_term}, Matched code: {matched_code}")
+            return matched_term, matched_code
+    except Exception as e:
+        print(f"Snowstorm FHIR search error for '{term}' in section '{section}': {e}")
+    
+    return None, None
+
+async def parse_ctakes_to_json(json_output):
     """
     Parses raw cTAKES JSON output into a simplified structure.
-    Filters for SNOMEDCT_US codes and performs initial term lookup.
+    Filters for SNOMEDCT_US codes and performs initial term lookup via Snowstorm.
     
     Args:
         json_output: Raw JSON string or dict from cTAKES
@@ -149,10 +204,14 @@ def parse_ctakes_to_json(json_output):
     for ctakes_key, output_key in category_map.items():
         if ctakes_key in json_output and isinstance(json_output[ctakes_key], list):
             print(f"Processing {ctakes_key} -> {output_key}, found {len(json_output[ctakes_key])} mentions")
+            
             codes = set()
             
             for mention in json_output[ctakes_key]:
                 if isinstance(mention, dict) and "conceptAttributes" in mention:
+                    
+                    ## term of the concept
+                    term = mention.get("text", "")
                     # Skip negated mentions (e.g., "no cough")
                     if mention.get("polarity") == 0:
                         continue 
@@ -168,9 +227,9 @@ def parse_ctakes_to_json(json_output):
                             if code_str in used_codes:
                                 continue
                                 
-                            # Look up the preferred term from our SNOMED snapshot
-                            term = code_to_term.get(code_str, "Unknown")
-                            if term != "Unknown":
+                            # Use the term and code directly from cTAKES without Snowstorm search
+                            # This speeds up the initial parsing; validation happens in filter_tags
+                            if term and code_str:
                                 codes.add((code_str, term))
                                 used_codes.add(code_str)
             
@@ -179,60 +238,49 @@ def parse_ctakes_to_json(json_output):
     print("Result from Ctakes:", result, "\n")
     return json.dumps(result)
 
-def fuzzy_search_term(search_term, threshold=80):
-    """
-    Performs fuzzy matching on the SNOMED CT term list.
-    Used when cTAKES fails to find a direct code or when LLM suggests new terms.
-    """
-    if not search_term or not isinstance(search_term, str):
-        return None, None, 0
-    
-    # Use rapidfuzz WRatio for robust string matching
-    result = process.extractOne(
-        search_term.strip(),
-        term_list,
-        scorer=fuzz.WRatio,
-        score_cutoff=threshold
-    )
-    
-    if result:
-        matched_term, score, _ = result
-        matched_code = term_to_code.get(matched_term)
-        if matched_code:
-            return matched_term, matched_code, score
-    
-    return None, None, 0
-
 async def filter_tags(clinical_text, generated_terms):
     """
-    Step 3 & 4: Filter and enrich SNOMED-CT terms using LLM and fuzzy matching.
+    Step 3 & 4: Filter and enrich SNOMED-CT terms using LLM and Snowstorm.
     
     1. LLM filters out irrelevant terms and suggests missing ones.
-    2. Fuzzy search validates LLM-suggested terms against the SNOMED snapshot.
+    2. Snowstorm validates LLM-suggested terms against the SNOMED CT.
     3. Final LLM validation ensures clinical consistency.
     """
     tokens_used = {}
-    
-    # Step 3a: LLM filtering and enrichment
-    contents = [
-        types.Part.from_text(text=f"Clinical Text: {clinical_text}"),
-        types.Part.from_text(text=f"Generated Terms: {generated_terms}"),
-    ]
-    
-    config = types.GenerateContentConfig(
-        system_instruction=types.Part.from_text(text=tags_filtering_and_enrichment_prompt),
-        temperature=0.0,
-        response_mime_type='application/json',
-        response_json_schema=tags_filtering_and_enrichment_schema_output,
-        thinking_config=types.ThinkingLevel.MINIMAL,
-    )
-    response, token_usage = await call_llm(contents, config)
-    filtered_and_enriched_tags = response.parsed
-    tokens_used['filter_tags'] = token_usage
 
-    print("Result from LLM:", filtered_and_enriched_tags, "\n")
+    print("Filtering and enriching SNOMED-CT terms using LLM and SNOMED snapshot")
+    try:
+        # Step 3a: LLM filtering and enrichment
+        contents = [
+            types.Part.from_text(text=f"Clinical Text: {clinical_text}"),
+            types.Part.from_text(text=f"Generated Terms: {generated_terms}"),
+        ]
+        
+        config = types.GenerateContentConfig(
+            system_instruction=types.Part.from_text(text=tags_filtering_and_enrichment_prompt),
+            temperature=0.0,
+            response_mime_type='application/json',
+            response_json_schema=tags_filtering_and_enrichment_schema_output,
+            thinking_config=types.ThinkingConfig(
+            thinking_level=types.ThinkingLevel.MINIMAL
+        )
+        )
+        response, token_usage = await call_llm(contents, config)
+        filtered_and_enriched_tags = response.parsed
+        tokens_used['filter_tags'] = token_usage
 
-    # Step 3b: Validate all terms (especially LLM-suggested ones) against local SNOMED snapshot
+        print("Result from LLM:", filtered_and_enriched_tags, "\n")
+    except Exception as e:
+        print(f"Error in filter_tags (LLM step): {e}")
+        # Fallback to using generated_terms directly if LLM fails
+        try:
+            filtered_and_enriched_tags = json.loads(generated_terms)
+        except Exception:
+            filtered_and_enriched_tags = {}
+        tokens_used['filter_tags'] = {'input_token': 0, 'output_token': 0}
+
+    # Step 3b: Validate all terms (especially LLM-suggested ones) against Snowstorm in parallel
+    print("Validating all terms (especially LLM-suggested ones) against Snowstorm in parallel")
     final_output = {
         "anatomical_sites": [],
         "procedures": [],
@@ -241,38 +289,58 @@ async def filter_tags(clinical_text, generated_terms):
         "medications": []
     }
 
-    FUZZY_SEARCH_THRESHOLD = 90
-    
-    for section in filtered_and_enriched_tags:
-        seen_codes = set()
-        for item in filtered_and_enriched_tags[section]:
-            code = item.get('code')
-            term = item.get('term', '')
-            code_str = str(code) if code else None
-            
-            if code_str and code_str in seen_codes:
-                continue
-            
-            # Direct lookup if code is provided
-            if code_str and code_str in valid_concept_ids:
-                matched_term = code_to_term.get(code_str, "Unknown")
-                if matched_term != "Unknown":
-                    seen_codes.add(code_str)
-                    final_output[section].append({'code': code_str, 'term': matched_term})
-                    continue
-            
-            # Fuzzy search if code is missing or invalid
-            if term:
-                matched_term, matched_code, similarity_score = fuzzy_search_term(term, threshold=FUZZY_SEARCH_THRESHOLD)
-                if matched_code and matched_code not in seen_codes:
-                    seen_codes.add(matched_code)
-                    final_output[section].append({'code': matched_code, 'term': matched_term})
+    import asyncio
 
-    print("Final Output after mapping/fuzzy search:", final_output, "\n")
+    async def resolve_term(section, item, client):
+        term = item.get('term', '')
+        if not term:
+            return None
 
-    # Step 4: Final LLM validation to ensure context relevance and split diagnosis
-    validated_output, validation_token_usage = await validate_final_output(clinical_text, final_output)
-    tokens_used['validate_final_output'] = validation_token_usage
+        # Always resolve using Snowstorm FHIR search by term.
+        normalized_term = term.strip()
+        if normalized_term.endswith(")") and " (" in normalized_term:
+            normalized_term = normalized_term.rsplit(" (", 1)[0].strip()
+
+        matched_term, matched_code = await snowstorm_search(normalized_term, section=section, client=client)
+        if matched_code:
+            return {"section": section, "code": matched_code, "term": matched_term}
+        return None
+
+    try:
+        tasks = []
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for section in filtered_and_enriched_tags:
+                if section in final_output:
+                    for item in filtered_and_enriched_tags[section]:
+                        tasks.append(resolve_term(section, item, client))
+
+            if tasks:
+                results = await asyncio.gather(*tasks)
+                for res in results:
+                    if res:
+                        sec = res["section"]
+                        # Prevent duplicate codes within the same section
+                        if not any(existing['code'] == res['code'] for existing in final_output[sec]):
+                            final_output[sec].append({'code': res['code'], 'term': res['term']})
+    except Exception as e:
+        print(f"Error in filter_tags (Snowstorm parallel step): {e}")
+
+    print("Final Output after mapping/Snowstorm search:", final_output, "\n")
+
+    try:
+        # Step 4: Final LLM validation to ensure context relevance and split diagnosis
+        validated_output, validation_token_usage = await validate_final_output(clinical_text, final_output)
+        tokens_used['validate_final_output'] = validation_token_usage
+    except Exception as e:
+        print(f"Error in filter_tags (Final validation step): {e}")
+        # Fallback to final_output without categorization
+        validated_output = final_output
+        if isinstance(validated_output.get("diagnosis"), list):
+            validated_output["diagnosis"] = {
+                "communicable_disease": [],
+                "non_communicable_disease": validated_output["diagnosis"]
+            }
+        tokens_used['validate_final_output'] = {'input_token': 0, 'output_token': 0}
     
     print("Final Validated Output:", validated_output, "\n")
     return validated_output, tokens_used
@@ -295,8 +363,9 @@ async def validate_final_output(clinical_text, final_output):
         temperature=0.0,
         response_mime_type='application/json',
         response_json_schema=final_validation_schema_output,
-        thinking_config=types.ThinkingLevel.MINIMAL,
-    )
+        thinking_config=types.ThinkingConfig(
+                thinking_level=types.ThinkingLevel.MINIMAL
+            ))
     
     try:
         response, token_usage = await call_llm(contents, config)

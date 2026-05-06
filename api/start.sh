@@ -37,3 +37,4 @@ echo "PID: $(cat ${PID_FILE})"
 echo "Log file: ${LOG_FILE}"
 echo "To stop: kill $(cat ${PID_FILE})"
 
+
