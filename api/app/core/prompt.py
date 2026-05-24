@@ -40,7 +40,7 @@ Append the SNOMED-CT semantic tag in parentheses to every term:
 - Procedures: "Term (procedure)"
 - Symptoms: "Term (finding)"
 - Diagnosis: "Term (disorder)"
-- Medications: "Term (substance)"
+- Medications: "Term (substance)" or "Term (product)"
 
 **Rules**:
 - Focus ONLY on the human-readable term name. Do NOT provide ConceptIDs or codes.

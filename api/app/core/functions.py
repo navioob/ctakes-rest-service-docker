@@ -7,7 +7,7 @@ from .prompt import clinical_text_refinement_prompt, tags_filtering_and_enrichme
 from .schema import clinical_text_refinement_schema_output, tags_filtering_and_enrichment_schema_output, final_validation_schema_output
 from .llm import llm_client, types
 
-from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH
+from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH, CTAKES_URL
 
 async def call_llm(contents, config):
     """
@@ -78,9 +78,8 @@ async def generate_tags(doctors_text):
     Step 2: Send clinical text to the cTAKES REST service for initial term extraction.
     cTAKES identifies medical entities like symptoms, procedures, and medications.
     """
-    # API follows the container name deployed for cTAKES REST service
-    # url = 'http://localhost:8083/ctakes-web-rest/service/analyze' #dev
-    url = 'http://ctakes-rest-service:8080/ctakes-web-rest/service/analyze' #prod
+    # API follows the container name deployed for cTAKES REST service (configured in .env)
+    url = CTAKES_URL
 
     params = {'pipeline': 'Default'}
     headers = {'cache-control': 'no-cache'}
@@ -114,22 +113,22 @@ async def snowstorm_search(term, section=None, limit=1, client=None):
 
     # Map our internal sections to SNOMED CT hierarchy roots for ECL filtering
     hierarchy_root_map = {
-        "anatomical_sites": "442083009", # Body structure
-        "procedures": "71388002",       # Procedure
-        "symptoms": "404684003",         # Clinical finding
-        "diagnosis": "64572001",         # Disease/Disorder
-        "medications": "105590001"       # Substance
+        "anatomical_sites": "<<442083009", # Body structure
+        "procedures": "<<71388002",       # Procedure
+        "symptoms": "<<404684003",         # Clinical finding
+        "diagnosis": "<<64572001",         # Disease/Disorder
+        "medications": "<<105590001 OR <<373873005" # Substance OR Pharmaceutical/biologic product
     }
     
-    root_id = hierarchy_root_map.get(section)
+    root_ecl = hierarchy_root_map.get(section)
     
     # Base FHIR expand URL
     url = f"{SNOWSTORM_URL}/fhir/ValueSet/$expand"
     
     # Construct the ValueSet URL with ECL filter if a hierarchy root is known
     vs_url = "http://snomed.info/sct?fhir_vs"
-    if root_id:
-        vs_url = f"http://snomed.info/sct?fhir_vs=ecl/<<{root_id}"
+    if root_ecl:
+        vs_url = f"http://snomed.info/sct?fhir_vs=ecl/{root_ecl}"
 
     params = {
         "url": vs_url,

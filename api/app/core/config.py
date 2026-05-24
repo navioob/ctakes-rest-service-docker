@@ -17,3 +17,7 @@ llm_credentials = {
 # Snowstorm Configuration
 SNOWSTORM_URL = os.getenv("SNOWSTORM_URL")
 SNOWSTORM_BRANCH = os.getenv("SNOWSTORM_BRANCH")
+
+# cTAKES Configuration
+CTKES_URL_DEFAULT = "http://localhost:8083/ctakes-web-rest/service/analyze"
+CTAKES_URL = os.getenv("CTAKES_URL", CTKES_URL_DEFAULT)
