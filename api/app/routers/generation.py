@@ -61,13 +61,18 @@ async def generate_terms(
         tokens_used = {}
         
         # 1. Generate raw tags from cTAKES
+        print("Generating tags from cTAKES")
         ctakes_response = await generate_tags(request.text)
         
         # 2. Parse cTAKES response into simplified JSON
-        parsed_terms_json = parse_ctakes_to_json(ctakes_response)
+        print("Parsing cTAKES response into simplified JSON")
+        parsed_terms_json = await parse_ctakes_to_json(ctakes_response)
         
         # 3, 4, 5. Filter, enrich, and validate terms using LLM and SNOMED snapshot
+        print("Filtering, enriching, and validating terms using LLM and SNOMED snapshot")
         filtered_terms, filter_tokens_used = await filter_tags(request.text, parsed_terms_json)
+        
+        print("Filtering, enriching, and validating terms using LLM and SNOMED snapshot completed")
         
         # Format token usage for the response
         for key, value in filter_tokens_used.items():
@@ -117,7 +122,7 @@ async def ctakes_health(
         ctakes_response = await generate_tags(clinical_summary)
         
         # Parse results
-        parsed_terms_json = parse_ctakes_to_json(ctakes_response)
+        parsed_terms_json = await parse_ctakes_to_json(ctakes_response)
         parsed_terms = json.loads(parsed_terms_json)
         
         # Calculate total terms found to determine "aliveness"

@@ -207,6 +207,7 @@ if st.session_state.get('authentication_status'):
             st.warning("Please enter at least one text field to proceed.")
         else:
             with st.spinner("Generating enriched summary and SNOMED-CT codes from clinical notes..."):
+                # Call the summary endpoint
                 enriched_text = generate_summary(doctors_text)
                 
                 if enriched_text:
@@ -217,57 +218,81 @@ if st.session_state.get('authentication_status'):
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    ctakes_response = generate_tags(doctors_text)
+                    st.divider()
+                    st.subheader("🏷️ Extracted SNOMED-CT Codes")
                     
-                    if ctakes_response:
-                        st.divider()
-                        st.subheader("🏷️ Extracted SNOMED-CT Codes")
-                        
+                    # Call the full pipeline via filter_tags (which now calls /generate/terms)
+                    filtered_tags = filter_tags(enriched_text)
+                    
+                    if filtered_tags:
                         try:
-                            parsed_json = parse_ctakes_to_json(ctakes_response)
-                            tags = json.loads(parsed_json)
-                            filtered_tags = filter_tags(enriched_text, tags)
-                            
-                            # [Your existing expander code unchanged]
-                            with st.expander(f'Anatomical Sites ({len(filtered_tags["anatomical_sites"])})', expanded=False):
-                                if filtered_tags["anatomical_sites"]:
+                            # 1. Anatomical Sites
+                            with st.expander(f'Anatomical Sites ({len(filtered_tags.get("anatomical_sites", []))})', expanded=False):
+                                if filtered_tags.get("anatomical_sites"):
                                     badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
                                                     for item in filtered_tags["anatomical_sites"]])
                                     st.markdown(badges, unsafe_allow_html=True)
                                 else:
                                     st.write("No codes found.")
                             
-                            with st.expander(f"Procedures ({len(filtered_tags['procedures'])})", expanded=False):
-                                if filtered_tags["procedures"]:
+                            # 2. Procedures
+                            with st.expander(f"Procedures ({len(filtered_tags.get('procedures', []))})", expanded=False):
+                                if filtered_tags.get("procedures"):
                                     badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
                                                     for item in filtered_tags["procedures"]])
                                     st.markdown(badges, unsafe_allow_html=True)
                                 else:
                                     st.write("No codes found.")
                             
-                            with st.expander(f"Symptoms ({len(filtered_tags['symptoms'])})", expanded=False):
-                                if filtered_tags["symptoms"]:
+                            # 3. Symptoms
+                            with st.expander(f"Symptoms ({len(filtered_tags.get('symptoms', []))})", expanded=False):
+                                if filtered_tags.get("symptoms"):
                                     badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
                                                     for item in filtered_tags["symptoms"]])
                                     st.markdown(badges, unsafe_allow_html=True)
                                 else:
                                     st.write("No codes found.")
                             
-                            with st.expander(f"Diagnosis ({len(filtered_tags['diagnosis'])})", expanded=False):
-                                if filtered_tags["diagnosis"]:
-                                    badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
-                                                    for item in filtered_tags["diagnosis"]])
-                                    st.markdown(badges, unsafe_allow_html=True)
+                            # 4. Diagnosis (Structured: Communicable & Non-Communicable)
+                            diag_data = filtered_tags.get("diagnosis", {})
+                            comm = diag_data.get("communicable_disease", [])
+                            non_comm = diag_data.get("non_communicable_disease", [])
+                            total_diag = len(comm) + len(non_comm)
+                            
+                            with st.expander(f"Diagnosis ({total_diag})", expanded=False):
+                                if total_diag > 0:
+                                    if comm:
+                                        st.markdown("##### 🦠 Communicable Diseases")
+                                        badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
+                                                        for item in comm])
+                                        st.markdown(badges, unsafe_allow_html=True)
+                                    
+                                    if comm and non_comm:
+                                        st.divider()
+                                        
+                                    if non_comm:
+                                        st.markdown("##### 🏥 Non-Communicable Diseases")
+                                        badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
+                                                        for item in non_comm])
+                                        st.markdown(badges, unsafe_allow_html=True)
                                 else:
                                     st.write("No codes found.")
                             
-                            with st.expander(f"Medications ({len(filtered_tags['medications'])})", expanded=False):
-                                if filtered_tags["medications"]:
+                            # 5. Medications
+                            with st.expander(f"Medications ({len(filtered_tags.get('medications', []))})", expanded=False):
+                                if filtered_tags.get("medications"):
                                     badges = "".join([f'<div class="pair-container"><span class="term-badge">{item["term"]}</span><span class="code-badge">{item["code"]}</span></div>' 
                                                     for item in filtered_tags["medications"]])
                                     st.markdown(badges, unsafe_allow_html=True)
                                 else:
                                     st.write("No codes found.")
+                                    
+                        except Exception as e:
+                            st.error(f"Error processing API output: {e}")
+                    else:
+                        st.error("Failed to extract SNOMED-CT terms from the service.")
+                else:
+                    st.error("Failed to generate enriched summary.")
                         except Exception as e:
                             st.error(f"Error parsing cTAKES output: {e}")
                     else:

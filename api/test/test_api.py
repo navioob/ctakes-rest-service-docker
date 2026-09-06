@@ -125,7 +125,7 @@ def test_generate_note_endpoint() -> Tuple[bool, Optional[str]]:
             f"{BASE_URL}/generate/note",
             headers=get_headers(),
             json=payload,
-            timeout=60  # Longer timeout for LLM processing
+            timeout=240  # Longer timeout for LLM processing
         )
         print_info(f"Status Code: {response.status_code}")
         
@@ -153,7 +153,7 @@ def test_generate_terms_endpoint(text) -> bool:
             f"{BASE_URL}/generate/terms",
             headers=get_headers(),
             json=payload,
-            timeout=120  # Longer timeout for full pipeline
+            timeout=300  # Pipeline now includes LLM summary + cTAKES + Snowstorm
         )
         print_info(f"Status Code: {response.status_code}")
         
@@ -164,11 +164,21 @@ def test_generate_terms_endpoint(text) -> bool:
             
             # Count terms by category
             total = 0
-            for category in ["anatomical_sites", "procedures", "symptoms", "diagnosis", "medications"]:
+            for category in ["anatomical_sites", "procedures", "symptoms", "medications"]:
                 count = len(terms.get(category, []))
                 total += count
                 if count > 0:
                     print(f"  {category}: {count} terms")
+            
+            # diagnosis is a nested object, not a flat list
+            diagnosis = terms.get("diagnosis", {})
+            comm = len(diagnosis.get("communicable_disease", []))
+            non_comm = len(diagnosis.get("non_communicable_disease", []))
+            if comm > 0:
+                print(f"  diagnosis (communicable): {comm} terms")
+            if non_comm > 0:
+                print(f"  diagnosis (non-communicable): {non_comm} terms")
+            total += comm + non_comm
             
             print(f"Total terms extracted: {total}")
             print(f"Response: {json.dumps(data, indent=2)}")

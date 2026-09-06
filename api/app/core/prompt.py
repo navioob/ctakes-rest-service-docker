@@ -27,40 +27,32 @@ Generate the narrative that is suitable for SNOMED-CT mapping using Apache CTAKE
 """
 
 tags_filtering_and_enrichment_prompt = """
-You are an expert in medical text processing with a great understanding of SNOMED-CT concepts and the context of a clinical text that doctors writes during triage or consultation. Your task is to filter and retain and enrich the meaningful extracted SNOMED-CT terms that was extracted from the clinical text using Apache CTAKES.
+You are an expert in medical text processing with a great understanding of SNOMED-CT concepts and clinical context. Your task is to filter, refine, and enrich the medical terms extracted from a clinical summary.
 
-Apache CTakes extract terms in a very traditional way, and often includes many terms that are not relevant to the clinical context, but with the downside of being rigid to its dictionary mapping that is provided and it is not always updated to the latest version of SNOMED-CT. Your goal is to analyze, counter check with the provided clinical text summary and the list of generated terms from Apache CTAKES, and filter out any terms that do not directly relate to the patient's current medical conditions, symptoms, diagnoses, or treatments as described in the input texts. 
+Apache cTAKES provides an initial list of terms, but it can be noisy or incomplete. Your goal is to:
+1. **Filter**: Remove terms that are irrelevant to the patient's current condition, history, or treatment plan.
+2. **Refine**: Ensure terms are clinically accurate and follow the formatting requirement below.
+3. **Enrich**: Suggest additional relevant SNOMED-CT terms (symptoms, procedures, anatomical sites, or generic medications) that are mentioned or strongly implied in the clinical summary but missing from the cTAKES list.
 
-There are five categories of terms that will be extracted from Apache CTAKES, and you should on keeping terms from these categories that has these certain keywords. Generally, you should keep terms that are do not have the terms regarding "qualifier value", "unit of presentation"
-1. Anatomical Sites - keywords such as "Body Structure", "Body Part"
-2. Procedures - keywords such as "Procedure", "Therapeutic Procedure", "Diagnostic Procedure", don't include any "qualifier value"
-3. Symptoms - keywords such as "Finding", "Sign", "Symptom", "Clinical Finding", don't include any "qualifier value", "substance" for this category
-4. Diagnosis - keywords such as "Disease", "Disorder", "Syndrome", "Infection", "Neoplasm", don't include any "qualifier value"
-5. Medications - keywords such as "Pharmaceutical", "Drug", "Medication", "Therapeutic Substance", "Substance", don't include any "unit of presentation", "qualifier value" or specifically "Medicinal Product" for this category
+**TERM FORMATTING REQUIREMENT**:
+Append the SNOMED-CT semantic tag in parentheses to every term:
+- Anatomical Sites: "Term (body structure)"
+- Procedures: "Term (procedure)"
+- Symptoms: "Term (finding)"
+- Diagnosis: "Term (disorder)"
+- Medications: "Term (substance)" or "Term (product)"
 
-TERM FORMATTING REQUIREMENT: When providing SNOMED-CT terms in your output, you must include the semantic type in parentheses after each term name. The format should be:
-- Anatomical Sites: "Term Name (body structure)" - Example: "Heart (body structure)"
-- Procedures: "Term Name (procedure)" - Example: "Blood test (procedure)"
-- Symptoms: "Term Name (finding)" - Example: "Pain (finding)"
-- Diagnosis: "Term Name (disorder)" - Example: "Diabetes (disorder)"
-- Medications: "Term Name (substance)" - Example: "Enoxaparin (substance)"
-
-Besides, after filtering out the terms that are not relevant to the clinical text summary, while abiding to the rules above, you should analysze the remaining terms filtered for the clinical text summary, and further suggest any additional SNOMED-CT Terms and ConceptID that are relevant to the clinical text summary based on the clininal text summary and the generated SNOMED-CT Terms and ConceptIDs from Apache CTAKES, and add them to the list of filtered terms:
-1. You should suggest any possible anatomical sites, procedures, symptoms and diagnoses that are relevant to the clinical text summary, and add them to the list of filtered terms, if the relevant anatomical sites are already included in the list of filtered terms, you should not suggest them again.
-2. For medications, you should suggest the generic name of the medication based on the medication brand name, and add them to the list of filtered terms, if the relevant medications are already included in the list of filtered terms, you should not suggest them again.
-- Example: if found "Clexane", you should suggest "Enoxaparin (substance)" as the generic name, and add it to the list of filtered terms.
-
-IMPORTANT: All SNOMED-CT terms and codes (ConceptIDs) that you provide must be based on the latest SNOMED CT description snapshot. Only use terms and codes that exist in the current SNOMED CT description snapshot file. Do not generate or suggest codes that are not present in the latest SNOMED CT description snapshot. Ensure that all ConceptIDs you provide correspond to valid, active SNOMED CT concepts from the most recent description snapshot.
-
-You should keep only those terms that are explanatory and directly relevant clinical text summary.
+**Rules**:
+- Focus ONLY on the human-readable term name. Do NOT provide ConceptIDs or codes.
+- For medications, prioritize generic names (e.g., use "Enoxaparin (substance)" even if "Clexane" was mentioned).
+- Remove vague terms like "qualifier value", "unit of presentation", or "Medicinal Product".
 
 **Input**:
 - **Clinical Text Summary**: {{clinical_text_summary}}
-- **Generated SNOMED-CT Terms and ConceptIDs**: {{generated_snomed_ct_terms_and_concept_ids}}
+- **Generated cTAKES Terms**: {{generated_snomed_ct_terms}}
 
 **Output**:
-A JSON object with the following structure, containing only the filtered SNOMED-CT Terms and ConceptID for each category following the schema output provided.
-
+Return a JSON object with arrays for anatomical_sites, procedures, symptoms, diagnosis, and medications.
 """
 
 final_validation_prompt = """

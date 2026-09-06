@@ -10,3 +10,6 @@ data
 *.csv
 *.ipynb
 *.xlsx
+*.pyc
+*.pyo
+*.pyd

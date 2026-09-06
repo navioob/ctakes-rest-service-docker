@@ -1,14 +1,23 @@
 from dotenv import load_dotenv
 import json
 import os
+import ast
 
 # Load environment variables from .env file at the start of the application
-load_dotenv()
+load_dotenv(override=True)
 
 # Configuration for Google LLM (Gemini/Vertex AI)
 # GOOGLE_APPLICATION_CREDENTIALS should contain the JSON string of the service account key
 # GOOGLE_APPLICATION_SCOPES should contain the required OAuth scopes
 llm_credentials = {
-    "GOOGLE_APPLICATION_CREDENTIALS": json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
-    "GOOGLE_APPLICATION_SCOPES": [os.getenv("GOOGLE_APPLICATION_SCOPES")]
+    "GOOGLE_APPLICATION_CREDENTIALS": ast.literal_eval(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+    "GOOGLE_APPLICATION_SCOPES": [(os.getenv("GOOGLE_APPLICATION_SCOPES"))]
 }
+
+# Snowstorm Configuration
+SNOWSTORM_URL = os.getenv("SNOWSTORM_URL")
+SNOWSTORM_BRANCH = os.getenv("SNOWSTORM_BRANCH")
+
+# cTAKES Configuration
+CTKES_URL_DEFAULT = "http://localhost:8083/ctakes-web-rest/service/analyze"
+CTAKES_URL = os.getenv("CTAKES_URL", CTKES_URL_DEFAULT)
