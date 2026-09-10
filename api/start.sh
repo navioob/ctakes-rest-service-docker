@@ -13,6 +13,11 @@ CONTAINER_NAME="cne-api-container"
 NETWORK_NAME="backend"
 PORT=8082
 
+# Host path to the downloaded MedCAT model pack (a directory, or a .zip -
+# CAT.load_model_pack() handles either), mounted read-only into the
+# container. Requires a UTS/UMLS-licensed download - see api/README.md.
+MEDCAT_MODEL_PACK_HOST_PATH="${MEDCAT_MODEL_PACK_HOST_PATH:-$HOME/medcat_models/model_pack}"
+
 echo "Starting deployment of ${IMAGE_NAME}..."
 
 # 1. Create network if it doesn't exist
@@ -41,11 +46,12 @@ docker run -d \
     --network "${NETWORK_NAME}" \
     -p "${PORT}:8082" \
     --env-file "${ROOT_DIR}/.env" \
+    -v "${MEDCAT_MODEL_PACK_HOST_PATH}:/models/model_pack:ro" \
     --restart unless-stopped \
     "${IMAGE_NAME}"
 
 echo "--------------------------------------------------"
-echo "CTakes REST Service API started successfully!"
+echo "Clinical Notes Enhancer API started successfully!"
 echo "Container: ${CONTAINER_NAME}"
 echo "Port: ${PORT}"
 echo "Network: ${NETWORK_NAME}"

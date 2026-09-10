@@ -1,13 +1,15 @@
+import asyncio
 import json
 
 import os
 import httpx
+from functools import lru_cache
 
 from .prompt import clinical_text_refinement_prompt, tags_filtering_and_enrichment_prompt, final_validation_prompt
 from .schema import clinical_text_refinement_schema_output, tags_filtering_and_enrichment_schema_output, final_validation_schema_output
 from .llm import llm_client, types
 
-from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH, CTAKES_URL
+from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH, MEDCAT_MODEL_PACK_PATH
 
 async def call_llm(contents, config):
     """
@@ -73,29 +75,27 @@ async def generate_summary(doctors_text):
         return doctors_text, {'input_token': 0, 'output_token': 0}
 
 
+@lru_cache(maxsize=1)
+def _get_cat():
+    """
+    Loads the MedCAT model pack once per worker process, on first use.
+    Lazy (not module-level/eager) so importing this module - e.g. from the
+    offline TUI-mapping self-check - never pays for a multi-GB model load.
+    """
+    from medcat.cat import CAT
+    print(f"Loading MedCAT model pack from {MEDCAT_MODEL_PACK_PATH} ...")
+    return CAT.load_model_pack(MEDCAT_MODEL_PACK_PATH)
+
+
 async def generate_tags(doctors_text):
     """
-    Step 2: Send clinical text to the cTAKES REST service for initial term extraction.
-    cTAKES identifies medical entities like symptoms, procedures, and medications.
+    Step 2: Run MedCAT NER+L in-process over the refined clinical text.
+    get_entities() is synchronous/CPU-bound, so it runs in a thread to
+    avoid blocking the event loop.
     """
-    # API follows the container name deployed for cTAKES REST service (configured in .env)
-    url = CTAKES_URL
-
-    params = {'pipeline': 'Default'}
-    headers = {'cache-control': 'no-cache'}
-    data = doctors_text
-
-    print("\nGenerated Summary:\n", data, '\n')
-    
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, params=params, headers=headers, content=data)
-            response.raise_for_status()
-            print("Status Code:", response.status_code)
-            return response.text
-    except httpx.RequestError as e:
-        print(f"An error occurred: {e}")
-        raise
+    print("\nGenerated Summary:\n", doctors_text, "\n")
+    cat = _get_cat()
+    return await asyncio.to_thread(cat.get_entities, doctors_text)
 
 async def snowstorm_search(term, section=None, limit=1, client=None):
     """
@@ -162,31 +162,73 @@ async def snowstorm_search(term, section=None, limit=1, client=None):
     
     return None, None
 
-async def parse_ctakes_to_json(json_output):
+# SNOMED CT semantic tag -> internal category. The current public MedCAT
+# model packs are built from SNOMED CT RF2, so each entity's type_ids are
+# opaque per-build numeric ids pointing into the loaded pack's own
+# cdb.type_id2info - NOT UMLS TUIs. The *names* stored there are the
+# standard SNOMED semantic tags, which are stable across different SNOMED
+# model pack builds even though the numeric ids are not, so the
+# type_id -> category map is built dynamically per loaded pack (see
+# _get_type_id_category_map) rather than hardcoded by numeric id.
+# This mirrors the semantic tags this repo's own tags_filtering_and_enrichment_prompt
+# (prompt.py) already expects per category: body structure, procedure,
+# finding, disorder, substance/product.
+SEMANTIC_TAG_CATEGORY_MAP = {
+    "body structure": "anatomical_sites",
+    "procedure": "procedures",
+    "finding": "symptoms",
+    "disorder": "diagnosis",
+    "substance": "medications",
+    "product": "medications",
+}
+
+# Meta-annotation values treated as "not actually present" (mirrors cTAKES's
+# polarity == 0 skip). Only takes effect if the loaded model pack ships a
+# MetaCAT status/presence model - if it doesn't, meta_anns is empty and every
+# entity is treated as affirmed (no negation filtering available).
+NEGATED_STATUSES = {"negated", "hypothetical", "family", "other"}
+
+
+def classify_tui(type_ids, type_id_category_map):
+    """Returns the first internal category matched by any of the given type_ids, or None."""
+    for tid in type_ids or []:
+        category = type_id_category_map.get(tid)
+        if category:
+            return category
+    return None
+
+
+@lru_cache(maxsize=1)
+def _get_type_id_category_map():
     """
-    Parses raw cTAKES JSON output into a simplified structure.
-    Filters for SNOMEDCT_US codes and performs initial term lookup via Snowstorm.
-    
+    Builds {type_id: category} from the loaded model pack's own
+    cdb.type_id2info, by matching each type_id's SNOMED semantic tag name
+    against SEMANTIC_TAG_CATEGORY_MAP. Built once per worker, right after
+    the model itself loads (triggers _get_cat(), same lazy-load semantics).
+    """
+    cat = _get_cat()
+    mapping = {}
+    for type_id, info in cat.cdb.type_id2info.items():
+        category = SEMANTIC_TAG_CATEGORY_MAP.get(info.name.lower())
+        if category:
+            mapping[type_id] = category
+    return mapping
+
+
+async def parse_medcat_to_json(medcat_output):
+    """
+    Parses MedCAT's get_entities() output into the same simplified structure
+    parse_ctakes_to_json used to produce. The "code" in each (code, term) pair
+    is a UMLS CUI rather than a SNOMED code - that's fine, filter_tags/
+    snowstorm_search re-resolves every term to a real SNOMED code by TEXT
+    later; this tuple is only used for dedup and as LLM filtering context.
+
     Args:
-        json_output: Raw JSON string or dict from cTAKES
+        medcat_output: dict from CAT.get_entities(), shaped like
+            {"entities": {"0": {"cui": ..., "pretty_name": ..., "type_ids": [...],
+                                 "meta_anns": {...}}, ...}, "tokens": [...]}
     """
-    if isinstance(json_output, str):
-        try:
-            json_output = json.loads(json_output)
-        except json.JSONDecodeError:
-            raise ValueError("Invalid JSON string provided as input")
-
-    if not isinstance(json_output, dict):
-        raise ValueError("Input must be a dictionary or valid JSON string")
-
-    # Map cTAKES mention types to our internal categories
-    category_map = {
-        "AnatomicalSiteMention": "anatomical_sites",
-        "ProcedureMention": "procedures",
-        "SignSymptomMention": "symptoms",
-        "DiseaseDisorderMention": "diagnosis",
-        "MedicationMention": "medications"
-    }
+    entities = medcat_output.get("entities", {}) if isinstance(medcat_output, dict) else {}
 
     result = {
         "anatomical_sites": [],
@@ -196,45 +238,33 @@ async def parse_ctakes_to_json(json_output):
         "medications": []
     }
 
-    used_codes = set()  # Prevent duplicate codes across categories
+    used_cuis = set()  # Prevent duplicate CUIs across categories
+    type_id_category_map = _get_type_id_category_map()
 
-    print(f"cTAKES JSON keys: {list(json_output.keys()) if isinstance(json_output, dict) else 'Not a dict'}")
-    
-    for ctakes_key, output_key in category_map.items():
-        if ctakes_key in json_output and isinstance(json_output[ctakes_key], list):
-            print(f"Processing {ctakes_key} -> {output_key}, found {len(json_output[ctakes_key])} mentions")
-            
-            codes = set()
-            
-            for mention in json_output[ctakes_key]:
-                if isinstance(mention, dict) and "conceptAttributes" in mention:
-                    
-                    ## term of the concept
-                    term = mention.get("text", "")
-                    # Skip negated mentions (e.g., "no cough")
-                    if mention.get("polarity") == 0:
-                        continue 
-                    
-                    for attr in mention.get("conceptAttributes", []):
-                        # Only interested in SNOMED CT codes
-                        if attr.get("codingScheme") == "SNOMEDCT_US":
-                            code = attr.get("code")
-                            if not code:
-                                continue
-                            
-                            code_str = str(code)
-                            if code_str in used_codes:
-                                continue
-                                
-                            # Use the term and code directly from cTAKES without Snowstorm search
-                            # This speeds up the initial parsing; validation happens in filter_tags
-                            if term and code_str:
-                                codes.add((code_str, term))
-                                used_codes.add(code_str)
-            
-            result[output_key] = sorted(list(codes), key=lambda x: x[0])
-    
-    print("Result from Ctakes:", result, "\n")
+    print(f"MedCAT entity count: {len(entities)}")
+
+    for ent in entities.values():
+        cui = ent.get("cui")
+        term = ent.get("pretty_name") or ent.get("source_value", "")
+        if not cui or not term or cui in used_cuis:
+            continue
+
+        meta = ent.get("meta_anns") or {}
+        status = (meta.get("Status") or meta.get("Presence") or {}).get("value", "")
+        if status.lower() in NEGATED_STATUSES:
+            continue
+
+        category = classify_tui(ent.get("type_ids"), type_id_category_map)
+        if category is None:
+            continue
+
+        result[category].append((cui, term))
+        used_cuis.add(cui)
+
+    for key in result:
+        result[key] = sorted(result[key], key=lambda x: x[0])
+
+    print("Result from MedCAT:", result, "\n")
     return json.dumps(result)
 
 async def filter_tags(clinical_text, generated_terms):
@@ -287,8 +317,6 @@ async def filter_tags(clinical_text, generated_terms):
         "diagnosis": [],
         "medications": []
     }
-
-    import asyncio
 
     async def resolve_term(section, item, client):
         term = item.get('term', '')

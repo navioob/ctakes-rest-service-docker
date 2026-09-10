@@ -18,6 +18,5 @@ llm_credentials = {
 SNOWSTORM_URL = os.getenv("SNOWSTORM_URL")
 SNOWSTORM_BRANCH = os.getenv("SNOWSTORM_BRANCH")
 
-# cTAKES Configuration
-CTKES_URL_DEFAULT = "http://localhost:8083/ctakes-web-rest/service/analyze"
-CTAKES_URL = os.getenv("CTAKES_URL", CTKES_URL_DEFAULT)
+# MedCAT Configuration
+MEDCAT_MODEL_PACK_PATH = os.getenv("MEDCAT_MODEL_PACK_PATH", "/models/model_pack")

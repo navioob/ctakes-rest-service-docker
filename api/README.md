@@ -1,6 +1,6 @@
-# 🚀 CTakes REST Service API
+# 🚀 Clinical Notes Enhancer API
 
-This directory contains the **FastAPI wrapper service** for the Apache cTAKES REST pipeline. It serves as an intelligent middleware layer that bridges clinical text inputs with LLM refinement (Google Gemini), Named Entity Recognition (cTAKES), and concept validation against a local SNOMED-CT database (Snowstorm).
+This directory contains the **FastAPI middleware service**. It bridges clinical text inputs with LLM refinement (Google Gemini), Named Entity Recognition run in-process via [MedCAT](https://github.com/CogStack/cogstack-nlp/), and concept validation against a local SNOMED-CT database (Snowstorm).
 
 ---
 
@@ -14,7 +14,7 @@ graph TD
     B --> C[Gemini: Note Refinement]
     C --> D[Professional Narrative Summary]
     D --> E[POST /generate/terms]
-    E --> F[Apache cTAKES REST: Raw NER]
+    E --> F[MedCAT: In-Process NER+L]
     F --> G[JSON Parser: Filter Negated Mentions]
     G --> H[Gemini: Noise Filter & Enrichment]
     H --> I[Snowstorm FHIR API: Code Verification & ECL Filter]
@@ -24,7 +24,7 @@ graph TD
 
 ### Pipeline Details:
 1. **Clinical Note Refinement (`/generate/note`)**: Translates shorthand clinical notes and abbreviations (e.g., `DM` ➔ `Diabetes Mellitus`, `HPT` ➔ `Hypertension`, `od` ➔ `once daily`) into a formal clinical narrative summary.
-2. **Named Entity Recognition (NER)**: Submits the refined narrative to an Apache cTAKES container to extract medical concepts (medications, procedures, symptoms, anatomical sites, diagnoses).
+2. **Named Entity Recognition (NER)**: Runs the refined narrative through an in-process MedCAT model (loaded once per worker, on first use) to extract medical concepts (medications, procedures, symptoms, anatomical sites, diagnoses).
 3. **Filtering & Enrichment**: Google Gemini filters out irrelevant mapping tags and enriches the results with any missing terms implied by the context.
 4. **SNOMED-CT Concept Mapping**: Query terms are checked against the Snowstorm Lite FHIR expansion API (`/fhir/ValueSet/$expand`) using Expression Constraint Language (ECL) scopes to extract accurate codes and descriptions.
 5. **Final Validation & Disease Split**: Categorizes diagnoses into `communicable_disease` and `non_communicable_disease`, discarding any contextually invalid mappings.
@@ -43,7 +43,14 @@ Create a `.env` file in the project root directory (referenced by the API contai
 | `API_BEARER_TOKEN_HASH` | Bcrypt hash of the bearer token for security verification | `$2a$12$hknEgVoR.cfg.115lfneS...` |
 | `SNOWSTORM_URL` | Base URL of the Snowstorm FHIR terminology server | `http://snowstorm-lite:8080` (or `http://localhost:8080`) |
 | `SNOWSTORM_BRANCH` | Target branch of the SNOMED database | `MAIN` |
-| `CTAKES_URL` | Endpoint of the Apache cTAKES REST service | `http://localhost:8083/ctakes-web-rest/service/analyze` |
+| `MEDCAT_MODEL_PACK_PATH` | In-container path to the MedCAT model pack (volume-mounted, see Step 2 below) | `/models/model_pack` |
+
+> [!NOTE]
+> The MedCAT model pack is a UMLS/SNOMED CT concept database + vocab, obtained
+> via a [UTS](https://uts.nlm.nih.gov/) (UMLS license) account. It's too large
+> and license-gated to bake into the Docker image, so it's downloaded once to
+> the host and mounted read-only into the container instead (see `api/start.sh`
+> and `MEDCAT_MODEL_PACK_HOST_PATH`).
 
 ---
 
@@ -71,40 +78,21 @@ print("API_BEARER_TOKEN_HASH=" + hashed.decode('utf-8'))
 
 ## 🐳 End-to-End Container Deployment
 
-To run the complete pipeline, all three services must share the same Docker network (`backend`).
+To run the complete pipeline, both services must share the same Docker network (`backend`).
 
 ### Step 1: Create the Docker Network
 ```bash
 docker network create backend
 ```
 
-### Step 2: Run Apache cTAKES Service
-You can either build the cTAKES image from scratch or load it from a pre-saved tar file shared by teammates.
-
-**Option A: Load from Pre-saved Tar File (Recommended if available)**
-If you have a compressed image tarball (e.g., `ctakes-rest-service.tar.gz`), run:
-```bash
-gunzip ctakes-rest-service.tar.gz
-docker load -i ctakes-rest-service.tar
-```
-
-**Option B: Build from Scratch**
-If you do not have the tar file, build the image from the root of this repository (this compiles Maven dependencies and downloads large dictionaries):
-```bash
-# Run this from the repository root directory
-docker build -t ctakes-rest-service .
-```
-
-Once loaded or built, start the container on the shared network mapping port `8083`:
-```bash
-docker run -d \
-  --name ctakes-rest-service \
-  --network backend \
-  -p 8083:8080 \
-  --memory=5g \
-  --restart unless-stopped \
-  ctakes-rest-service:latest
-```
+### Step 2: Obtain a MedCAT Model Pack
+Sign in at `https://medcat.sites.er.kcl.ac.uk/auth-callback-api` with your
+UMLS/UTS API key, complete the model-pack request form, and download a
+MedCAT SNOMED CT model pack. `CAT.load_model_pack()` accepts either a `.zip`
+or an already-unpacked directory - place whichever you got at
+`$HOME/medcat_models/model_pack` (the default `api/start.sh` looks for), or
+set `MEDCAT_MODEL_PACK_HOST_PATH` to point elsewhere. It's mounted into the
+API container read-only at container start; it is not baked into the image.
 
 ### Step 3: Run Snowstorm Lite & Onboard SNOMED-CT Dictionary
 Snowstorm Lite is a lightweight, high-performance FHIR terminology server that runs self-contained (using Lucene) and does not require an external database like Elasticsearch. It has a very small memory footprint (typically under 1GB).
@@ -133,7 +121,7 @@ This script handles the onboarding process by:
 2. Uploading the RF2 ZIP archive.
 3. Polling the import status until it reports `COMPLETED`.
 
-### Step 4: Deploy the FastAPI Wrapper API
+### Step 4: Deploy the FastAPI Middleware API
 You can build and deploy the API using the helper script `start.sh`:
 ```bash
 chmod +x start.sh
@@ -151,6 +139,7 @@ docker run -d \
   --network backend \
   -p 8082:8082 \
   --env-file ../.env \
+  -v "$HOME/medcat_models/model_pack:/models/model_pack:ro" \
   --restart unless-stopped \
   cne-api
 ```
@@ -163,14 +152,14 @@ docker run -d \
 
 #### `GET /`
 Verifies API connectivity. Requires bearer token if configured.
-* **Response**: `{"message": "CTakes REST Service API"}`
+* **Response**: `{"message": "Clinical Notes Enhancer API"}`
 
 #### `GET /health`
 Internal service health status.
 * **Response**: `{"status": "healthy"}`
 
-#### `GET /generate/ctakes/health`
-Simulates a test narrative through cTAKES and parses output to confirm that the full cTAKES execution pipeline is functional.
+#### `GET /generate/medcat/health`
+Runs a test narrative through the in-process MedCAT model and parses the output to confirm the full pipeline is functional.
 * **Response**:
   ```json
   {
@@ -205,7 +194,7 @@ Accepts raw doctor's notes and returns a refined, grammatically correct narrativ
   ```
 
 #### `POST /generate/terms`
-The full processing pipeline: takes text, runs cTAKES, performs LLM filtering/enrichment, validates SNOMED-CT codes, and splits diagnoses.
+The full processing pipeline: takes text, runs MedCAT, performs LLM filtering/enrichment, validates SNOMED-CT codes, and splits diagnoses.
 * **Request Body**:
   ```json
   {

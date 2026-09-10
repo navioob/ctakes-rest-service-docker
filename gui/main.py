@@ -1,5 +1,5 @@
 import streamlit as st
-from helpers import generate_summary, generate_tags, parse_ctakes_to_json, filter_tags
+from helpers import generate_summary, generate_tags, parse_medcat_to_json, filter_tags
 import json
 import streamlit_authenticator as stauth
 import yaml
@@ -140,12 +140,12 @@ if st.session_state.get('authentication_status'):
         - **Enter Clinical Notes**: Input diagnosis, symptoms, and prescription details in the provided text areas.
         - **Use Standard Abbreviations**: Include medical abbreviations (e.g., 'DM' for Diabetes Mellitus, 'od' for once daily).
         - **Submit**: Click the **Submit** button to generate an enriched summary and extract SNOMED-CT codes.
-        - **Check Requirements**: Ensure the cTAKES service is running at `http://localhost:8080/ctakes-web-rest/service/analyze`.
+        - **Check Requirements**: Ensure the `api/` service is running (`curl http://localhost:8082/health`).
 
         ### Tips
         - Provide as much detail as possible for accurate summaries.
         - Review the generated summary and codes for clinical accuracy.
-        - Contact support if you encounter issues with the cTAKES service.
+        - Contact support if you encounter issues with the API service.
 
         **Note**: Ensure your Google API key is configured in the `.env` file.
         """, unsafe_allow_html=True)
@@ -153,7 +153,7 @@ if st.session_state.get('authentication_status'):
     # Main App
     st.title("🩺 Clinical Note Enhancer")
     st.markdown("""
-    Transform raw clinical notes into professionally articulated summaries and extract SNOMED-CT codes using Apache cTAKES.  
+    Transform raw clinical notes into professionally articulated summaries and extract SNOMED-CT codes using MedCAT.
     Fill in the details below and click **Submit** to view the enriched summary and tagged codes.
     """, unsafe_allow_html=True)
 
@@ -291,12 +291,6 @@ if st.session_state.get('authentication_status'):
                             st.error(f"Error processing API output: {e}")
                     else:
                         st.error("Failed to extract SNOMED-CT terms from the service.")
-                else:
-                    st.error("Failed to generate enriched summary.")
-                        except Exception as e:
-                            st.error(f"Error parsing cTAKES output: {e}")
-                    else:
-                        st.error("Failed to generate tags from cTAKES.")
                 else:
                     st.error("Failed to generate enriched summary.")
 

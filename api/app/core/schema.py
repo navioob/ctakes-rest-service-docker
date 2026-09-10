@@ -7,7 +7,7 @@ clinical_text_refinement_schema_output = {
     "properties": {
         "text": {
             "type": "string",
-            "description": "The comprehensive medical summary paragraph that is suitable for SNOMED-CT mapping using Apache CTAKES.",
+            "description": "The comprehensive medical summary paragraph that is suitable for SNOMED-CT mapping using MedCAT.",
         },
     },
     "required": ["text"],

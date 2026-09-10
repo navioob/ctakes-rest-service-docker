@@ -13,7 +13,7 @@ from app.models import (
 from app.core.functions import (
     generate_summary,
     generate_tags,
-    parse_ctakes_to_json,
+    parse_medcat_to_json,
     filter_tags
 )
 from app.core.auth import verify_token
@@ -51,22 +51,22 @@ async def generate_terms(
     Extracts, filters, and enriches SNOMED-CT terms from clinical text.
     
     Pipeline:
-    1. Send text to cTAKES for initial entity recognition.
-    2. Parse cTAKES output into a structured format.
+    1. Run text through MedCAT for initial entity recognition.
+    2. Parse MedCAT output into a structured format.
     3. Use LLM to filter irrelevant terms and suggest missing ones.
     4. Validate all terms against a local SNOMED-CT snapshot using fuzzy matching.
     5. Final LLM validation and diagnosis categorization.
     """
     try:
         tokens_used = {}
-        
-        # 1. Generate raw tags from cTAKES
-        print("Generating tags from cTAKES")
-        ctakes_response = await generate_tags(request.text)
-        
-        # 2. Parse cTAKES response into simplified JSON
-        print("Parsing cTAKES response into simplified JSON")
-        parsed_terms_json = await parse_ctakes_to_json(ctakes_response)
+
+        # 1. Generate raw tags from MedCAT
+        print("Generating tags from MedCAT")
+        medcat_response = await generate_tags(request.text)
+
+        # 2. Parse MedCAT response into simplified JSON
+        print("Parsing MedCAT response into simplified JSON")
+        parsed_terms_json = await parse_medcat_to_json(medcat_response)
         
         # 3, 4, 5. Filter, enrich, and validate terms using LLM and SNOMED snapshot
         print("Filtering, enriching, and validating terms using LLM and SNOMED snapshot")
@@ -98,15 +98,15 @@ async def generate_terms(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/ctakes/health")
-async def ctakes_health(
+@router.get("/medcat/health")
+async def medcat_health(
     token: str = Depends(verify_token)
 ):
     """
-    Verifies the health of the underlying cTAKES service.
-    
-    Runs a sample clinical text through the pipeline to ensure that 
-    the cTAKES container is up and correctly extracting terms.
+    Verifies the MedCAT model pack is loaded and functional.
+
+    Runs a sample clinical text through the pipeline to ensure that
+    MedCAT is loaded and correctly extracting terms.
     """
     test_text = """Swollen LL, limited mobility, pain and redness over R LL. Possible PE post THR and TKR. 
         IV Streptokinase stat. IV NS 500ml run fast. SC Clean 200U stat. Refer to IR for possible embolectomy"""
@@ -118,11 +118,11 @@ async def ctakes_health(
         clinical_summary, summary_token_usage = await generate_summary(test_text)
         tokens_used['generate_summary'] = TokenUsage(**summary_token_usage)
         
-        # Call cTAKES
-        ctakes_response = await generate_tags(clinical_summary)
-        
+        # Call MedCAT
+        medcat_response = await generate_tags(clinical_summary)
+
         # Parse results
-        parsed_terms_json = await parse_ctakes_to_json(ctakes_response)
+        parsed_terms_json = await parse_medcat_to_json(medcat_response)
         parsed_terms = json.loads(parsed_terms_json)
         
         # Calculate total terms found to determine "aliveness"

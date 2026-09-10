@@ -18,19 +18,15 @@ stop_and_remove() {
 }
 
 echo "Cleaning up existing containers if running..."
-stop_and_remove "ctakes-rest-service"
-stop_and_remove "clinical-notes-enhancer"
+stop_and_remove "cne-api-container"
 stop_and_remove "snowstorm-lite"
 
 echo "Starting services..."
 
-echo "Starting ctakes-rest-service..."
-docker run -d -p 8080:8080 --memory=5g --name ctakes-rest-service --network backend ctakes-rest-service:latest
-
-echo "Starting clinical-notes-enhancer..."
-docker run -d --name clinical-notes-enhancer -p 8081:8081 --network backend clinical-notes-enhancer:latest
-
 echo "Starting snowstorm-lite..."
 docker run -d -p 8083:8080 --name snowstorm-lite --network backend -v snowstorm-lite-volume:/app/lucene-index snomedinternational/snowstorm-lite --index.path=lucene-index/data --admin.password=admin
+
+echo "Starting the API (builds+runs cne-api, MedCAT loaded in-process)..."
+"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/api/start.sh"
 
 echo "All services started successfully!"

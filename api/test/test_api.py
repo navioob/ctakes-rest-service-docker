@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for CTakes REST Service API endpoints.
+Test script for Clinical Notes Enhancer API endpoints.
 Tests all endpoints sequentially.
 """
 
@@ -153,7 +153,7 @@ def test_generate_terms_endpoint(text) -> bool:
             f"{BASE_URL}/generate/terms",
             headers=get_headers(),
             json=payload,
-            timeout=300  # Pipeline now includes LLM summary + cTAKES + Snowstorm
+            timeout=300  # Pipeline now includes LLM summary + MedCAT + Snowstorm
         )
         print_info(f"Status Code: {response.status_code}")
         
@@ -192,42 +192,42 @@ def test_generate_terms_endpoint(text) -> bool:
         return False
 
 
-def test_ctakes_health_endpoint() -> bool:
-    """Test the cTAKES health endpoint."""
-    print_header("Testing cTAKES Health Endpoint (GET /generate/ctakes/health)")
+def test_medcat_health_endpoint() -> bool:
+    """Test the MedCAT health endpoint."""
+    print_header("Testing MedCAT Health Endpoint (GET /generate/medcat/health)")
     try:
         response = requests.get(
-            f"{BASE_URL}/generate/ctakes/health",
+            f"{BASE_URL}/generate/medcat/health",
             headers=get_headers(),
-            timeout=60  # Longer timeout for cTAKES processing
+            timeout=60  # Longer timeout for MedCAT processing
         )
         print_info(f"Status Code: {response.status_code}")
-        
+
         if response.status_code == 200:
             data = response.json()
             status = data.get("status", "unknown")
             alive = data.get("alive", False)
             total_terms = data.get("total_terms", 0)
-            
+
             if alive:
-                print_success(f"cTAKES is ALIVE - Status: {status}, Terms: {total_terms}")
+                print_success(f"MedCAT is ALIVE - Status: {status}, Terms: {total_terms}")
             else:
-                print_error(f"cTAKES is NOT RESPONDING - Status: {status}, Terms: {total_terms}")
-            
+                print_error(f"MedCAT is NOT RESPONDING - Status: {status}, Terms: {total_terms}")
+
             print(f"Response: {json.dumps(data, indent=2)}")
             return alive
         else:
-            print_error(f"cTAKES health endpoint failed with status {response.status_code}")
+            print_error(f"MedCAT health endpoint failed with status {response.status_code}")
             print(f"Response: {response.text}")
             return False
     except Exception as e:
-        print_error(f"Error testing cTAKES health endpoint: {str(e)}")
+        print_error(f"Error testing MedCAT health endpoint: {str(e)}")
         return False
 
 
 def main():
     """Run all tests sequentially."""
-    print_header("CTakes REST Service API Test Suite")
+    print_header("Clinical Notes Enhancer API Test Suite")
     print_info(f"Base URL: {BASE_URL}")
     print_info(f"Bearer Token: {f'{BEARER_TOKEN[0:10]}***' if BEARER_TOKEN else 'Not provided'}")
     
@@ -249,15 +249,15 @@ def main():
     # Test generate terms endpoint with the selected text
     terms_result = test_generate_terms_endpoint(terms_text)
     
-    # Test cTAKES health endpoint
-    ctakes_health_result = test_ctakes_health_endpoint()
-    
+    # Test MedCAT health endpoint
+    medcat_health_result = test_medcat_health_endpoint()
+
     results = {
         "root": root_result,
         "health": health_result,
         "generate_note": note_success,
         "generate_terms": terms_result,
-        "ctakes_health": ctakes_health_result,
+        "medcat_health": medcat_health_result,
     }
     
     # Summary

@@ -61,9 +61,9 @@ def generate_tags(doctors_text):
     """
     return generate_summary(doctors_text)
 
-def parse_ctakes_to_json(summary_text):
+def parse_medcat_to_json(summary_text):
     """
-    No longer needed for parsing raw cTAKES, as the API handles it.
+    No longer needed for parsing raw MedCAT output, as the API handles it.
     Returns the summary text to be used in the next step.
     """
     return summary_text

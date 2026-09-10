@@ -1,6 +1,6 @@
 # API Test Script
 
-This directory contains test scripts for the CTakes REST Service API.
+This directory contains test scripts for the Clinical Notes Enhancer API.
 
 ## Usage
 
@@ -38,7 +38,10 @@ The script tests the following endpoints sequentially:
 2. **GET /health** - Health check endpoint
 3. **POST /generate/note** - Generate clinical note summary
 4. **POST /generate/terms** - Generate SNOMED-CT terms (full pipeline)
-5. **GET /ctakes/health** - cTAKES health check
+5. **GET /generate/medcat/health** - MedCAT health check
+
+Also see `test_medcat_mapping.py` - an offline, no-server-required self-check
+for the MedCAT type_id -> category mapping logic (`python test_medcat_mapping.py`).
 
 ## Output
 

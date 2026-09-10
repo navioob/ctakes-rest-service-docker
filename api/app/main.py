@@ -5,8 +5,8 @@ from app.core.auth import verify_token
 
 # Initialize FastAPI application
 app = FastAPI(
-    title="CTakes REST Service API",
-    description="FastAPI service for CTakes with LLM-based refinement and SNOMED-CT mapping",
+    title="Clinical Notes Enhancer API",
+    description="FastAPI service for MedCAT with LLM-based refinement and SNOMED-CT mapping",
     version="1.0.0"
 )
 
@@ -27,7 +27,7 @@ app.include_router(generation_router)
 @app.get("/")
 async def root(token: str = Depends(verify_token)):
     """Root endpoint to verify API connectivity."""
-    return {"message": "CTakes REST Service API"}
+    return {"message": "Clinical Notes Enhancer API"}
 
 
 @app.get("/health")

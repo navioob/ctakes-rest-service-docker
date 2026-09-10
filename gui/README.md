@@ -1,11 +1,11 @@
 # 🩺 Clinical Note Enhancer
 
-A Streamlit application that transforms raw clinical notes into professionally articulated summaries and extracts SNOMED-CT codes using Apache cTAKES and Google Gemini AI.
+A Streamlit application that transforms raw clinical notes into professionally articulated summaries and extracts SNOMED-CT codes via the `api/` service (MedCAT + Google Gemini AI).
 
 ## ✨ Features
 
 - **Clinical Note Processing**: Transform abbreviated clinical notes into structured, professional summaries
-- **SNOMED-CT Code Extraction**: Automatically extract and map medical concepts to SNOMED-CT codes using Apache cTAKES
+- **SNOMED-CT Code Extraction**: Automatically extract and map medical concepts to SNOMED-CT codes via the `api/` service (MedCAT-backed)
 - **Term Mapping**: Convert SNOMED-CT codes to human-readable terms using official SNOMED-CT Snapshot files
 - **Interactive UI**: Badge-style display of extracted codes with term-code pairing
 - **Dark/Light Mode Support**: Responsive design that adapts to Streamlit themes
@@ -21,8 +21,7 @@ Before running the application, ensure you have the following:
 
 ### 2. External Services
 - **Google Gemini API Key**: Required for AI-powered summary generation (please include it in your .env file in the root directory)
-- **Apache cTAKES**: Running REST service at `http://localhost:8080/ctakes-web-rest/service/analyze`
-- **SNOMED-CT Snapshot Files**: Official terminology files for code-to-term mapping (in the `gui` folder, eg. sct2_Description_Snapshot-en_INT_20250901.txt)
+- **`api/` service**: Running at `http://localhost:8082` (see `api/README.md` for setup, including MedCAT and Snowstorm)
 
 ## 🛠️ Installation
 
@@ -35,7 +34,7 @@ pip install -r requirements.txt
 
 **Key Dependencies:**
 - `streamlit` - Web application framework
-- `requests` - HTTP client for cTAKES API
+- `requests` - HTTP client for the `api/` service
 - `google-generativeai` - Google Gemini AI integration
 - `pandas` - SNOMED-CT file processing
 - `python-dotenv` - Environment variable management
@@ -66,8 +65,8 @@ Download the required SNOMED-CT files (requires valid license):
    SNOMED_DESC_FILE = "data/snomed/sct2_Description_Snapshot_InternationalRF2_PRODUCTION_20250131T120000Z.txt"
    ```
 
-### Step 4: Setup Apache cTAKES
-1. **Verify Service**: Ensure cTAKES is running at `http://localhost:8080/ctakes-web-rest/service/analyze`
+### Step 4: Start the `api/` Service
+1. **Verify Service**: Ensure the API is running and healthy: `curl http://localhost:8082/health` (see `api/README.md` for full setup, including the MedCAT model pack and Snowstorm).
 
 ## 🚀 Running the Application
 
@@ -103,7 +102,7 @@ U/C asthma h/o allergic rhinitis since 2019 DM HPT currently: t salbutamol 100mc
 ```
 clinical-note-enhancer/
 ├── main.py                 # Streamlit application entry point
-├── helpers.py              # Core logic: LLM, cTAKES, SNOMED-CT processing
+├── helpers.py              # Core logic: calls into the `api/` service
 ├── requirements.txt        # Python dependencies
 ├── .env                    # Environment variables (API keys)
 ├── data/
@@ -121,11 +120,8 @@ Edit `helpers.py` to point to your SNOMED-CT files:
 SNOMED_DESC_FILE = "path/to/your/sct2_Description_Snapshot_*.txt"
 ```
 
-### cTAKES Configuration
-Modify the cTAKES endpoint in `helpers.py`:
-```python
-url = 'http://your-ctakes-host:port/ctakes-web-rest/service/analyze'
-```
+### `api/` Service Configuration
+Modify the API base URL in `helpers.py` if it's not running on `localhost:8082`.
 
 ### LLM Model
 Change the Gemini model in `helpers.py`:
@@ -139,10 +135,10 @@ Change the Gemini model in `helpers.py`:
    - Verify internet connectivity
    - Ensure Google Gemini API is enabled
 
-2. **"Failed to generate tags from cTAKES"**
-   - Verify cTAKES service is running: `curl http://localhost:8080/ctakes-web-rest/service/analyze`
-   - Check cTAKES logs for errors
-   - Ensure cTAKES has sufficient memory (2GB+ recommended)
+2. **"Failed to generate tags"**
+   - Verify the `api/` service is running: `curl http://localhost:8082/health`
+   - Check `cne-api-container` logs for errors: `docker logs cne-api-container`
+   - Confirm the MedCAT model pack loaded successfully (see `api/README.md`)
 
 3. **"Unknown" terms for SNOMED-CT codes**
    - Verify SNOMED-CT file paths in `helpers.py`
@@ -165,9 +161,8 @@ Change the Gemini model in `helpers.py`:
 - Subject to [Google AI Terms of Service](https://ai.google.dev/terms)
 - Usage limits apply based on API key tier
 
-### Apache cTAKES
-- Licensed under Apache License 2.0
-- See [cTAKES LICENSE](https://ctakes.apache.org/license.html)
+### MedCAT
+- Licensed under Apache License 2.0 — see the [CogStack MedCAT repository](https://github.com/CogStack/cogstack-nlp/) for details
 
 ## 🤝 Contributing
 

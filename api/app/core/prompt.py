@@ -23,16 +23,16 @@ Raw text from the doctor's clinical notes written during triage or consultation:
 **Example Output**:
 The patient presents with essential (primary) hypertension, type 2 diabetes mellitus without complications, and hyperlipidemia. The patient has a history of hepatitis A diagnosed in 2022. Currently, the patient reports no active complaints, with blood pressure and blood glucose levels well controlled. The patient is managed with Losartan 100 mg once daily for hypertension, Metformin 1000 mg twice daily and Gliclazide 80 mg once daily for type 2 diabetes, Atorvastatin 40 mg at night for hyperlipidemia, and Aspirin 100 mg once daily for cardiovascular protection. The treatment plan includes continuing these medications as prescribed, with regular monitoring of blood pressure and blood glucose to maintain control.
 
-Generate the narrative that is suitable for SNOMED-CT mapping using Apache CTAKES for the provided input.
+Generate the narrative that is suitable for SNOMED-CT mapping using MedCAT for the provided input.
 """
 
 tags_filtering_and_enrichment_prompt = """
 You are an expert in medical text processing with a great understanding of SNOMED-CT concepts and clinical context. Your task is to filter, refine, and enrich the medical terms extracted from a clinical summary.
 
-Apache cTAKES provides an initial list of terms, but it can be noisy or incomplete. Your goal is to:
+MedCAT provides an initial list of terms, but it can be noisy or incomplete. Your goal is to:
 1. **Filter**: Remove terms that are irrelevant to the patient's current condition, history, or treatment plan.
 2. **Refine**: Ensure terms are clinically accurate and follow the formatting requirement below.
-3. **Enrich**: Suggest additional relevant SNOMED-CT terms (symptoms, procedures, anatomical sites, or generic medications) that are mentioned or strongly implied in the clinical summary but missing from the cTAKES list.
+3. **Enrich**: Suggest additional relevant SNOMED-CT terms (symptoms, procedures, anatomical sites, or generic medications) that are mentioned or strongly implied in the clinical summary but missing from the MedCAT list.
 
 **TERM FORMATTING REQUIREMENT**:
 Append the SNOMED-CT semantic tag in parentheses to every term:
@@ -49,7 +49,7 @@ Append the SNOMED-CT semantic tag in parentheses to every term:
 
 **Input**:
 - **Clinical Text Summary**: {{clinical_text_summary}}
-- **Generated cTAKES Terms**: {{generated_snomed_ct_terms}}
+- **Generated MedCAT Terms**: {{generated_snomed_ct_terms}}
 
 **Output**:
 Return a JSON object with arrays for anatomical_sites, procedures, symptoms, diagnosis, and medications.
