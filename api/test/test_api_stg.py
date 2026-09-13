@@ -153,7 +153,7 @@ def test_generate_terms_endpoint(text) -> bool:
             f"{BASE_URL}/generate/terms",
             headers=get_headers(),
             json=payload,
-            timeout=120  # Longer timeout for full pipeline
+            timeout=240  # Full pipeline includes a reasoning-enabled LLM call (~60s alone)
         )
         print_info(f"Status Code: {response.status_code}")
         
@@ -190,7 +190,7 @@ def test_terms_health_endpoint() -> bool:
         response = requests.get(
             f"{BASE_URL}/generate/terms/health",
             headers=get_headers(),
-            timeout=60  # Longer timeout for reasoning-enabled LLM processing
+            timeout=120  # Reasoning-enabled discover_terms call alone measured ~60s
         )
         print_info(f"Status Code: {response.status_code}")
 

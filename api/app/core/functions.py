@@ -80,16 +80,16 @@ async def generate_summary(doctors_text):
 
 async def discover_terms(clinical_text):
     """
-    Step 2: Use the LLM (reasoning enabled) to discover clinical entities
-    directly from the refined note - replaces MedCAT NER+L, which needed a
-    multi-GB model pack in RAM per worker.
+    Step 2: Use the LLM to discover clinical entities directly from the
+    refined note - replaces MedCAT NER+L, which needed a multi-GB model
+    pack in RAM per worker. Reasoning disabled: it measured ~60s alone with
+    it on, pushing the full /generate/terms pipeline past gateway timeouts.
     """
     try:
         parsed, token_usage = await call_llm(
             term_discovery_prompt,
             clinical_text,
             term_discovery_schema_output,
-            reasoning=True,
         )
         return json.dumps(parsed), token_usage
     except Exception as e:
