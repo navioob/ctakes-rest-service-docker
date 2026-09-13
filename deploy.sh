@@ -23,12 +23,17 @@ REMOTE_SNOMED_DATA_PATH="${REMOTE_REPO_PATH}/scripts/snomed/data"
 
 echo "Copying MedCAT model pack..."
 ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p $(dirname "${REMOTE_MODEL_PACK_PATH}")"
-scp -r "${LOCAL_MODEL_PACK_PATH}" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_MODEL_PACK_PATH}"
+# rsync, not scp: resumable (--partial) if the connection drops on a 2GB+
+# transfer, and doesn't hit scp's macOS "Operation canceled" flakiness on
+# large local reads from TCC-protected folders (e.g. under ~/Documents).
+rsync -a --partial --progress -e ssh \
+    "${LOCAL_MODEL_PACK_PATH}" "${REMOTE_USER}@${REMOTE_HOST}:$(dirname "${REMOTE_MODEL_PACK_PATH}")/"
 
 if [ -d "${LOCAL_SNOMED_DATA_PATH}" ] && [ -n "$(ls -A "${LOCAL_SNOMED_DATA_PATH}" 2>/dev/null)" ]; then
     echo "Copying SNOMED CT RF2 archive(s)..."
     ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p $(dirname "${REMOTE_SNOMED_DATA_PATH}")"
-    scp -r "${LOCAL_SNOMED_DATA_PATH}" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_SNOMED_DATA_PATH}"
+    rsync -a --partial --progress -e ssh \
+        "${LOCAL_SNOMED_DATA_PATH}" "${REMOTE_USER}@${REMOTE_HOST}:$(dirname "${REMOTE_SNOMED_DATA_PATH}")/"
 else
     echo "No local SNOMED CT archive found at ${LOCAL_SNOMED_DATA_PATH}, skipping."
 fi
