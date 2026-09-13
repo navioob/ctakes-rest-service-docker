@@ -12,6 +12,3 @@ OPENAI_MODEL_ID = os.getenv("OPENAI_MODEL_ID")
 # Snowstorm Configuration
 SNOWSTORM_URL = os.getenv("SNOWSTORM_URL")
 SNOWSTORM_BRANCH = os.getenv("SNOWSTORM_BRANCH")
-
-# MedCAT Configuration
-MEDCAT_MODEL_PACK_PATH = os.getenv("MEDCAT_MODEL_PACK_PATH", "/models/model_pack")

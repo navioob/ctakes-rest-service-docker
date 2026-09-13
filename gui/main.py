@@ -1,5 +1,5 @@
 import streamlit as st
-from helpers import generate_summary, generate_tags, parse_medcat_to_json, filter_tags
+from helpers import generate_summary, generate_tags, parse_terms_to_json, filter_tags
 import json
 import streamlit_authenticator as stauth
 import yaml
@@ -153,7 +153,7 @@ if st.session_state.get('authentication_status'):
     # Main App
     st.title("🩺 Clinical Note Enhancer")
     st.markdown("""
-    Transform raw clinical notes into professionally articulated summaries and extract SNOMED-CT codes using MedCAT.
+    Transform raw clinical notes into professionally articulated summaries and extract SNOMED-CT codes using an LLM.
     Fill in the details below and click **Submit** to view the enriched summary and tagged codes.
     """, unsafe_allow_html=True)
 

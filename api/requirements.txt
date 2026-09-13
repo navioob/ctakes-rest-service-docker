@@ -6,4 +6,3 @@ openai
 python-dotenv
 bcrypt
 requests
-medcat[spacy]==2.9.0

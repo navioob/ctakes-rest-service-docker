@@ -153,7 +153,7 @@ def test_generate_terms_endpoint(text) -> bool:
             f"{BASE_URL}/generate/terms",
             headers=get_headers(),
             json=payload,
-            timeout=300  # Pipeline now includes LLM summary + MedCAT + Snowstorm
+            timeout=300  # Pipeline now includes LLM summary + LLM term discovery (reasoning) + Snowstorm
         )
         print_info(f"Status Code: {response.status_code}")
         
@@ -192,14 +192,14 @@ def test_generate_terms_endpoint(text) -> bool:
         return False
 
 
-def test_medcat_health_endpoint() -> bool:
-    """Test the MedCAT health endpoint."""
-    print_header("Testing MedCAT Health Endpoint (GET /generate/medcat/health)")
+def test_terms_health_endpoint() -> bool:
+    """Test the term discovery health endpoint."""
+    print_header("Testing Term Discovery Health Endpoint (GET /generate/terms/health)")
     try:
         response = requests.get(
-            f"{BASE_URL}/generate/medcat/health",
+            f"{BASE_URL}/generate/terms/health",
             headers=get_headers(),
-            timeout=60  # Longer timeout for MedCAT processing
+            timeout=60  # Longer timeout for reasoning-enabled LLM processing
         )
         print_info(f"Status Code: {response.status_code}")
 
@@ -210,18 +210,18 @@ def test_medcat_health_endpoint() -> bool:
             total_terms = data.get("total_terms", 0)
 
             if alive:
-                print_success(f"MedCAT is ALIVE - Status: {status}, Terms: {total_terms}")
+                print_success(f"Term discovery is ALIVE - Status: {status}, Terms: {total_terms}")
             else:
-                print_error(f"MedCAT is NOT RESPONDING - Status: {status}, Terms: {total_terms}")
+                print_error(f"Term discovery is NOT RESPONDING - Status: {status}, Terms: {total_terms}")
 
             print(f"Response: {json.dumps(data, indent=2)}")
             return alive
         else:
-            print_error(f"MedCAT health endpoint failed with status {response.status_code}")
+            print_error(f"Term discovery health endpoint failed with status {response.status_code}")
             print(f"Response: {response.text}")
             return False
     except Exception as e:
-        print_error(f"Error testing MedCAT health endpoint: {str(e)}")
+        print_error(f"Error testing term discovery health endpoint: {str(e)}")
         return False
 
 
@@ -249,15 +249,15 @@ def main():
     # Test generate terms endpoint with the selected text
     terms_result = test_generate_terms_endpoint(terms_text)
     
-    # Test MedCAT health endpoint
-    medcat_health_result = test_medcat_health_endpoint()
+    # Test term discovery health endpoint
+    terms_health_result = test_terms_health_endpoint()
 
     results = {
         "root": root_result,
         "health": health_result,
         "generate_note": note_success,
         "generate_terms": terms_result,
-        "medcat_health": medcat_health_result,
+        "terms_health": terms_health_result,
     }
     
     # Summary

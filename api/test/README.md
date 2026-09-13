@@ -38,10 +38,7 @@ The script tests the following endpoints sequentially:
 2. **GET /health** - Health check endpoint
 3. **POST /generate/note** - Generate clinical note summary
 4. **POST /generate/terms** - Generate SNOMED-CT terms (full pipeline)
-5. **GET /generate/medcat/health** - MedCAT health check
-
-Also see `test_medcat_mapping.py` - an offline, no-server-required self-check
-for the MedCAT type_id -> category mapping logic (`python test_medcat_mapping.py`).
+5. **GET /generate/terms/health** - Term discovery health check
 
 ## Output
 

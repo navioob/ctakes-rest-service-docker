@@ -7,10 +7,94 @@ clinical_text_refinement_schema_output = {
     "properties": {
         "text": {
             "type": "string",
-            "description": "The comprehensive medical summary paragraph that is suitable for SNOMED-CT mapping using MedCAT.",
+            "description": "The comprehensive medical summary paragraph that is suitable for SNOMED-CT term extraction.",
         },
     },
     "required": ["text"],
+}
+
+# Schema for Step 2: Term Discovery (LLM-based clinical entity extraction)
+term_discovery_schema_output = {
+    "type": "object",
+    "properties": {
+        "anatomical_sites": {
+            "type": "array",
+            "description": "List of anatomical site terms found in the text. Can be an empty list [].",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {
+                        "type": "string",
+                        "description": "Description of SNOMED-CT Term.",
+                    },
+                },
+                "required": ["term"],
+            },
+        },
+        "procedures": {
+            "type": "array",
+            "description": "List of procedure terms found in the text. Can be an empty list [].",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {
+                        "type": "string",
+                        "description": "Description of SNOMED-CT Term.",
+                    },
+                },
+                "required": ["term"],
+            },
+        },
+        "symptoms": {
+            "type": "array",
+            "description": "List of symptom/finding terms found in the text. Can be an empty list [].",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {
+                        "type": "string",
+                        "description": "Description of SNOMED-CT Term.",
+                    },
+                },
+                "required": ["term"],
+            },
+        },
+        "diagnosis": {
+            "type": "array",
+            "description": "List of diagnosis/disorder terms found in the text. Can be an empty list [].",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {
+                        "type": "string",
+                        "description": "Description of SNOMED-CT Term.",
+                    },
+                },
+                "required": ["term"],
+            },
+        },
+        "medications": {
+            "type": "array",
+            "description": "List of medication terms found in the text. Can be an empty list [].",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {
+                        "type": "string",
+                        "description": "Description of SNOMED-CT Term.",
+                    },
+                },
+                "required": ["term"],
+            },
+        },
+    },
+    "required": [
+        "anatomical_sites",
+        "procedures",
+        "symptoms",
+        "diagnosis",
+        "medications",
+    ],
 }
 
 # Schema for Step 3: Tags Filtering and Enrichment

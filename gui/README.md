@@ -1,11 +1,11 @@
 # 🩺 Clinical Note Enhancer
 
-A Streamlit application that transforms raw clinical notes into professionally articulated summaries and extracts SNOMED-CT codes via the `api/` service (MedCAT + an OpenAI-compatible LLM).
+A Streamlit application that transforms raw clinical notes into professionally articulated summaries and extracts SNOMED-CT codes via the `api/` service (LLM-based, OpenAI-compatible).
 
 ## ✨ Features
 
 - **Clinical Note Processing**: Transform abbreviated clinical notes into structured, professional summaries
-- **SNOMED-CT Code Extraction**: Automatically extract and map medical concepts to SNOMED-CT codes via the `api/` service (MedCAT-backed)
+- **SNOMED-CT Code Extraction**: Automatically extract and map medical concepts to SNOMED-CT codes via the `api/` service (LLM-backed)
 - **Term Mapping**: Convert SNOMED-CT codes to human-readable terms using official SNOMED-CT Snapshot files
 - **Interactive UI**: Badge-style display of extracted codes with term-code pairing
 - **Dark/Light Mode Support**: Responsive design that adapts to Streamlit themes
@@ -20,7 +20,7 @@ Before running the application, ensure you have the following:
 - **pip** package manager
 
 ### 2. External Services
-- **`api/` service**: reachable from the GUI — `http://localhost:8082` when both run on the host, or `http://cne-api-container:8082` when both run as containers on the shared `backend` Docker network (see `api/README.md` for setup, including the OpenAI-compatible LLM, MedCAT, and Snowstorm). The API itself needs `OPENAI_API_BASE`/`OPENAI_API_KEY`/`OPENAI_MODEL_ID` — the GUI has no LLM credentials of its own, it only calls the API over HTTP.
+- **`api/` service**: reachable from the GUI — `http://localhost:8082` when both run on the host, or `http://cne-api-container:8082` when both run as containers on the shared `backend` Docker network (see `api/README.md` for setup, including the OpenAI-compatible LLM and Snowstorm). The API itself needs `OPENAI_API_BASE`/`OPENAI_API_KEY`/`OPENAI_MODEL_ID` — the GUI has no LLM credentials of its own, it only calls the API over HTTP.
 
 ## 🛠️ Installation
 
@@ -65,7 +65,7 @@ Download the required SNOMED-CT files (requires valid license):
    ```
 
 ### Step 4: Start the `api/` Service
-1. **Verify Service**: Ensure the API is running and healthy: `curl http://localhost:8082/health` (see `api/README.md` for full setup, including the MedCAT model pack and Snowstorm).
+1. **Verify Service**: Ensure the API is running and healthy: `curl http://localhost:8082/health` (see `api/README.md` for full setup, including Snowstorm).
 
 ## 🚀 Running the Application
 
@@ -145,7 +145,7 @@ The LLM is configured on the `api/` side, not here — see `OPENAI_API_BASE`/
 2. **"Failed to generate tags"**
    - Verify the `api/` service is running: `curl http://localhost:8082/health`
    - Check `cne-api-container` logs for errors: `docker logs cne-api-container`
-   - Confirm the MedCAT model pack loaded successfully (see `api/README.md`)
+   - Check `/generate/terms/health` to confirm the term discovery step is working
 
 3. **"Unknown" terms for SNOMED-CT codes**
    - Verify SNOMED-CT file paths in `helpers.py`
@@ -166,9 +166,6 @@ The LLM is configured on the `api/` side, not here — see `OPENAI_API_BASE`/
 
 ### LLM Provider
 - Subject to whichever OpenAI-compatible provider is configured via `OPENAI_API_BASE` in the API's environment — check that provider's terms and usage limits
-
-### MedCAT
-- Licensed under Apache License 2.0 — see the [CogStack MedCAT repository](https://github.com/CogStack/cogstack-nlp/) for details
 
 ## 🤝 Contributing
 

@@ -1,6 +1,6 @@
 # 🚀 Clinical Notes Enhancer API
 
-This directory contains the **FastAPI middleware service**. It bridges clinical text inputs with LLM refinement (any OpenAI-compatible chat completions endpoint), Named Entity Recognition run in-process via [MedCAT](https://github.com/CogStack/cogstack-nlp/), and concept validation against a local SNOMED-CT database (Snowstorm).
+This directory contains the **FastAPI middleware service**. It bridges clinical text inputs with LLM refinement, LLM-based (reasoning-enabled) clinical entity discovery, and concept validation against a local SNOMED-CT database (Snowstorm) - all via any OpenAI-compatible chat completions endpoint.
 
 ---
 
@@ -14,20 +14,21 @@ graph TD
     B --> C[LLM: Note Refinement]
     C --> D[Professional Narrative Summary]
     D --> E[POST /generate/terms]
-    E --> F[MedCAT: In-Process NER+L]
-    F --> G[JSON Parser: Filter Negated Mentions]
-    G --> H[LLM: Noise Filter & Enrichment]
-    H --> I[Snowstorm FHIR API: Code Verification & ECL Filter]
-    I --> J[LLM: Final Validation & Disease Split]
-    J --> K[Categorized SNOMED-CT Terms]
+    E --> F[LLM: Term Discovery, reasoning enabled]
+    F --> G[LLM: Noise Filter & Enrichment]
+    G --> H[Snowstorm FHIR API: Code Verification & ECL Filter]
+    H --> I[LLM: Final Validation & Disease Split]
+    I --> J[Categorized SNOMED-CT Terms]
 ```
 
 ### Pipeline Details:
 1. **Clinical Note Refinement (`/generate/note`)**: Translates shorthand clinical notes and abbreviations (e.g., `DM` ➔ `Diabetes Mellitus`, `HPT` ➔ `Hypertension`, `od` ➔ `once daily`) into a formal clinical narrative summary.
-2. **Named Entity Recognition (NER)**: Runs the refined narrative through an in-process MedCAT model (loaded once per worker, on first use) to extract medical concepts (medications, procedures, symptoms, anatomical sites, diagnoses).
-3. **Filtering & Enrichment**: The configured LLM filters out irrelevant mapping tags and enriches the results with any missing terms implied by the context.
+2. **Term Discovery**: An LLM call with reasoning enabled reads the refined narrative and extracts clinical entities (medications, procedures, symptoms, anatomical sites, diagnoses), explicitly excluding negated/denied findings.
+3. **Filtering & Enrichment**: A second (fast, non-reasoning) LLM call filters out irrelevant mapping tags and enriches the results with any missing terms implied by the context.
 4. **SNOMED-CT Concept Mapping**: Query terms are checked against the Snowstorm Lite FHIR expansion API (`/fhir/ValueSet/$expand`) using Expression Constraint Language (ECL) scopes to extract accurate codes and descriptions.
 5. **Final Validation & Disease Split**: Categorizes diagnoses into `communicable_disease` and `non_communicable_disease`, discarding any contextually invalid mappings.
+
+See [`../docs/medcat-to-llm-term-discovery.md`](../docs/medcat-to-llm-term-discovery.md) for why step 2 changed from an in-process MedCAT model to an LLM call.
 
 ---
 
@@ -44,14 +45,6 @@ Create a `.env` file in the project root directory (referenced by the API contai
 | `API_BEARER_TOKEN_HASH` | Bcrypt hash of the bearer token for security verification | `$2a$12$hknEgVoR.cfg.115lfneS...` |
 | `SNOWSTORM_URL` | Base URL of the Snowstorm FHIR terminology server | `http://snowstorm-lite:8080` (or `http://localhost:8080`) |
 | `SNOWSTORM_BRANCH` | Target branch of the SNOMED database | `MAIN` |
-| `MEDCAT_MODEL_PACK_PATH` | In-container path to the MedCAT model pack (volume-mounted, see Step 2 below) | `/models/model_pack` |
-
-> [!NOTE]
-> The MedCAT model pack is a UMLS/SNOMED CT concept database + vocab, obtained
-> via a [UTS](https://uts.nlm.nih.gov/) (UMLS license) account. It's too large
-> and license-gated to bake into the Docker image, so it's downloaded once to
-> the host and mounted read-only into the container instead (see `api/start.sh`
-> and `MEDCAT_MODEL_PACK_HOST_PATH`).
 
 ---
 
@@ -89,16 +82,7 @@ here for manual/partial deployment.
 docker network create backend
 ```
 
-### Step 2: Obtain a MedCAT Model Pack
-Sign in at `https://medcat.sites.er.kcl.ac.uk/auth-callback-api` with your
-UMLS/UTS API key, complete the model-pack request form, and download a
-MedCAT SNOMED CT model pack. `CAT.load_model_pack()` accepts either a `.zip`
-or an already-unpacked directory - place whichever you got at
-`<repo>/medcat_models/model_pack` (the default `api/start.sh` looks for), or
-set `MEDCAT_MODEL_PACK_HOST_PATH` to point elsewhere. It's mounted into the
-API container read-only at container start; it is not baked into the image.
-
-### Step 3: Run Snowstorm Lite & Onboard SNOMED-CT Dictionary
+### Step 2: Run Snowstorm Lite & Onboard SNOMED-CT Dictionary
 Snowstorm Lite is a lightweight, high-performance FHIR terminology server that runs self-contained (using Lucene) and does not require an external database like Elasticsearch. It has a very small memory footprint (typically under 1GB).
 
 **1. Run Snowstorm Lite Container**
@@ -125,7 +109,7 @@ This script handles the onboarding process by:
 2. Uploading the RF2 ZIP archive.
 3. Polling the import status until it reports `COMPLETED`.
 
-### Step 4: Deploy the FastAPI Middleware API
+### Step 3: Deploy the FastAPI Middleware API
 You can build and deploy the API using the helper script `api/start.sh`
 (also invoked automatically by the root `build.sh`):
 ```bash
@@ -144,7 +128,6 @@ docker run -d \
   --network backend \
   -p 8082:8082 \
   --env-file ../.env \
-  -v "<repo>/medcat_models/model_pack:/models/model_pack:ro" \
   --restart unless-stopped \
   cne-api
 ```
@@ -163,8 +146,8 @@ Verifies API connectivity. Requires bearer token if configured.
 Internal service health status.
 * **Response**: `{"status": "healthy"}`
 
-#### `GET /generate/medcat/health`
-Runs a test narrative through the in-process MedCAT model and parses the output to confirm the full pipeline is functional.
+#### `GET /generate/terms/health`
+Runs a test narrative through the LLM-based term discovery step and parses the output to confirm the full pipeline is functional.
 * **Response**:
   ```json
   {
@@ -199,7 +182,7 @@ Accepts raw doctor's notes and returns a refined, grammatically correct narrativ
   ```
 
 #### `POST /generate/terms`
-The full processing pipeline: takes text, runs MedCAT, performs LLM filtering/enrichment, validates SNOMED-CT codes, and splits diagnoses.
+The full processing pipeline: takes text, discovers terms via LLM (reasoning enabled), performs LLM filtering/enrichment, validates SNOMED-CT codes, and splits diagnoses.
 * **Request Body**:
   ```json
   {
@@ -226,6 +209,7 @@ The full processing pipeline: takes text, runs MedCAT, performs LLM filtering/en
       ]
     },
     "tokens_used": {
+      "discover_terms": { "input_token": 210, "output_token": 340 },
       "filter_tags": { "input_token": 450, "output_token": 180 },
       "validate_final_output": { "input_token": 310, "output_token": 95 }
     }

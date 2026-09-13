@@ -2,18 +2,8 @@
 set -e
 
 ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-MEDCAT_MODEL_PACK_HOST_PATH="${MEDCAT_MODEL_PACK_HOST_PATH:-${ROOT_DIR}/medcat_models/model_pack}"
 SNOMED_DATA_DIR="${ROOT_DIR}/scripts/snomed/data"
 SNOWSTORM_HOST_URL="http://localhost:8083"
-
-# Fail fast, before touching any containers, if the MedCAT model pack isn't
-# where api/start.sh expects it - a missing/empty dir would otherwise get
-# silently bind-mounted as empty and fail confusingly at first request.
-if [ ! -d "${MEDCAT_MODEL_PACK_HOST_PATH}" ] || [ -z "$(ls -A "${MEDCAT_MODEL_PACK_HOST_PATH}" 2>/dev/null)" ]; then
-    echo "ERROR: MedCAT model pack not found at ${MEDCAT_MODEL_PACK_HOST_PATH}" >&2
-    echo "Copy it there first (see docs/deployment-prerequisites.md / deploy.sh), or set MEDCAT_MODEL_PACK_HOST_PATH." >&2
-    exit 1
-fi
 
 # Ensure docker network 'backend' exists
 if ! docker network inspect backend >/dev/null 2>&1; then
@@ -74,7 +64,7 @@ else
     fi
 fi
 
-echo "Starting the API (builds+runs cne-api; MedCAT loads in-process on first request)..."
+echo "Starting the API (builds+runs cne-api)..."
 "${ROOT_DIR}/api/start.sh"
 
 echo "Building and starting the GUI..."

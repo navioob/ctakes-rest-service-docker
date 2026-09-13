@@ -1,10 +1,9 @@
-from .functions import generate_summary, generate_tags, parse_medcat_to_json, filter_tags, validate_final_output
+from .functions import generate_summary, discover_terms, filter_tags, validate_final_output
 
 
 __all__ = [
     "generate_summary",
-    "generate_tags",
-    "parse_medcat_to_json",
+    "discover_terms",
     "filter_tags",
     "validate_final_output"
 ]

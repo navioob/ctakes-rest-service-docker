@@ -3,15 +3,14 @@ import json
 
 import os
 import httpx
-from functools import lru_cache
 
-from .prompt import clinical_text_refinement_prompt, tags_filtering_and_enrichment_prompt, final_validation_prompt
-from .schema import clinical_text_refinement_schema_output, tags_filtering_and_enrichment_schema_output, final_validation_schema_output
+from .prompt import clinical_text_refinement_prompt, tags_filtering_and_enrichment_prompt, final_validation_prompt, term_discovery_prompt
+from .schema import clinical_text_refinement_schema_output, tags_filtering_and_enrichment_schema_output, final_validation_schema_output, term_discovery_schema_output
 from .llm import llm_client
 
-from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH, MEDCAT_MODEL_PACK_PATH, OPENAI_MODEL_ID
+from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH, OPENAI_MODEL_ID
 
-async def call_llm(system_prompt, user_text, schema):
+async def call_llm(system_prompt, user_text, schema, reasoning=False):
     """
     Generic asynchronous wrapper for LLM calls using an OpenAI-compatible
     chat completions API, forcing JSON output matching the given schema.
@@ -20,6 +19,9 @@ async def call_llm(system_prompt, user_text, schema):
         system_prompt: System instruction text
         user_text: User message text
         schema: JSON Schema dict describing the expected response shape
+        reasoning: Whether to let the model think before answering. Off by
+            default - most calls here are fast structured-output tasks that
+            don't benefit from it and pay heavily in latency/tokens if left on.
 
     Returns:
         tuple: (parsed_response_dict, token_usage_dict)
@@ -37,7 +39,7 @@ async def call_llm(system_prompt, user_text, schema):
             # Qwen3 hybrid models default to thinking mode, burning heavy
             # reasoning tokens even for a short structured-JSON task - not a
             # standard OpenAI param, so it goes through extra_body.
-            extra_body={"enable_thinking": False},
+            extra_body={"enable_thinking": reasoning},
         )
 
         content = response.choices[0].message.content.strip()
@@ -76,27 +78,24 @@ async def generate_summary(doctors_text):
         return doctors_text, {'input_token': 0, 'output_token': 0}
 
 
-@lru_cache(maxsize=1)
-def _get_cat():
+async def discover_terms(clinical_text):
     """
-    Loads the MedCAT model pack once per worker process, on first use.
-    Lazy (not module-level/eager) so importing this module - e.g. from the
-    offline TUI-mapping self-check - never pays for a multi-GB model load.
+    Step 2: Use the LLM (reasoning enabled) to discover clinical entities
+    directly from the refined note - replaces MedCAT NER+L, which needed a
+    multi-GB model pack in RAM per worker.
     """
-    from medcat.cat import CAT
-    print(f"Loading MedCAT model pack from {MEDCAT_MODEL_PACK_PATH} ...")
-    return CAT.load_model_pack(MEDCAT_MODEL_PACK_PATH)
-
-
-async def generate_tags(doctors_text):
-    """
-    Step 2: Run MedCAT NER+L in-process over the refined clinical text.
-    get_entities() is synchronous/CPU-bound, so it runs in a thread to
-    avoid blocking the event loop.
-    """
-    print("\nGenerated Summary:\n", doctors_text, "\n")
-    cat = _get_cat()
-    return await asyncio.to_thread(cat.get_entities, doctors_text)
+    try:
+        parsed, token_usage = await call_llm(
+            term_discovery_prompt,
+            clinical_text,
+            term_discovery_schema_output,
+            reasoning=True,
+        )
+        return json.dumps(parsed), token_usage
+    except Exception as e:
+        print(f"Error in discover_terms: {e}")
+        empty = {"anatomical_sites": [], "procedures": [], "symptoms": [], "diagnosis": [], "medications": []}
+        return json.dumps(empty), {'input_token': 0, 'output_token': 0}
 
 async def snowstorm_search(term, section=None, limit=1, client=None):
     """
@@ -162,111 +161,6 @@ async def snowstorm_search(term, section=None, limit=1, client=None):
         print(f"Snowstorm FHIR search error for '{term}' in section '{section}': {e}")
     
     return None, None
-
-# SNOMED CT semantic tag -> internal category. The current public MedCAT
-# model packs are built from SNOMED CT RF2, so each entity's type_ids are
-# opaque per-build numeric ids pointing into the loaded pack's own
-# cdb.type_id2info - NOT UMLS TUIs. The *names* stored there are the
-# standard SNOMED semantic tags, which are stable across different SNOMED
-# model pack builds even though the numeric ids are not, so the
-# type_id -> category map is built dynamically per loaded pack (see
-# _get_type_id_category_map) rather than hardcoded by numeric id.
-# This mirrors the semantic tags this repo's own tags_filtering_and_enrichment_prompt
-# (prompt.py) already expects per category: body structure, procedure,
-# finding, disorder, substance/product.
-SEMANTIC_TAG_CATEGORY_MAP = {
-    "body structure": "anatomical_sites",
-    "procedure": "procedures",
-    "finding": "symptoms",
-    "disorder": "diagnosis",
-    "substance": "medications",
-    "product": "medications",
-}
-
-# Meta-annotation values treated as "not actually present" (mirrors cTAKES's
-# polarity == 0 skip). Only takes effect if the loaded model pack ships a
-# MetaCAT status/presence model - if it doesn't, meta_anns is empty and every
-# entity is treated as affirmed (no negation filtering available).
-NEGATED_STATUSES = {"negated", "hypothetical", "family", "other"}
-
-
-def classify_tui(type_ids, type_id_category_map):
-    """Returns the first internal category matched by any of the given type_ids, or None."""
-    for tid in type_ids or []:
-        category = type_id_category_map.get(tid)
-        if category:
-            return category
-    return None
-
-
-@lru_cache(maxsize=1)
-def _get_type_id_category_map():
-    """
-    Builds {type_id: category} from the loaded model pack's own
-    cdb.type_id2info, by matching each type_id's SNOMED semantic tag name
-    against SEMANTIC_TAG_CATEGORY_MAP. Built once per worker, right after
-    the model itself loads (triggers _get_cat(), same lazy-load semantics).
-    """
-    cat = _get_cat()
-    mapping = {}
-    for type_id, info in cat.cdb.type_id2info.items():
-        category = SEMANTIC_TAG_CATEGORY_MAP.get(info.name.lower())
-        if category:
-            mapping[type_id] = category
-    return mapping
-
-
-async def parse_medcat_to_json(medcat_output):
-    """
-    Parses MedCAT's get_entities() output into the same simplified structure
-    parse_ctakes_to_json used to produce. The "code" in each (code, term) pair
-    is a UMLS CUI rather than a SNOMED code - that's fine, filter_tags/
-    snowstorm_search re-resolves every term to a real SNOMED code by TEXT
-    later; this tuple is only used for dedup and as LLM filtering context.
-
-    Args:
-        medcat_output: dict from CAT.get_entities(), shaped like
-            {"entities": {"0": {"cui": ..., "pretty_name": ..., "type_ids": [...],
-                                 "meta_anns": {...}}, ...}, "tokens": [...]}
-    """
-    entities = medcat_output.get("entities", {}) if isinstance(medcat_output, dict) else {}
-
-    result = {
-        "anatomical_sites": [],
-        "procedures": [],
-        "symptoms": [],
-        "diagnosis": [],
-        "medications": []
-    }
-
-    used_cuis = set()  # Prevent duplicate CUIs across categories
-    type_id_category_map = _get_type_id_category_map()
-
-    print(f"MedCAT entity count: {len(entities)}")
-
-    for ent in entities.values():
-        cui = ent.get("cui")
-        term = ent.get("pretty_name") or ent.get("source_value", "")
-        if not cui or not term or cui in used_cuis:
-            continue
-
-        meta = ent.get("meta_anns") or {}
-        status = (meta.get("Status") or meta.get("Presence") or {}).get("value", "")
-        if status.lower() in NEGATED_STATUSES:
-            continue
-
-        category = classify_tui(ent.get("type_ids"), type_id_category_map)
-        if category is None:
-            continue
-
-        result[category].append((cui, term))
-        used_cuis.add(cui)
-
-    for key in result:
-        result[key] = sorted(result[key], key=lambda x: x[0])
-
-    print("Result from MedCAT:", result, "\n")
-    return json.dumps(result)
 
 async def filter_tags(clinical_text, generated_terms):
     """

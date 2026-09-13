@@ -2,19 +2,20 @@
 
 This repository turns raw clinical notes into categorized, validated SNOMED-CT
 terms. A FastAPI middleware service (`api/`) refines the note with an LLM,
-extracts medical entities in-process with [MedCAT](https://github.com/CogStack/cogstack-nlp/)
-(no separate NLP container), and validates each term against a local
-Snowstorm Lite SNOMED-CT server.
+discovers clinical entities with a second (reasoning-enabled) LLM call, and
+validates each term against a local Snowstorm Lite SNOMED-CT server.
 
-Apache cTAKES (Java/Tomcat/MySQL) previously filled the NER role here and has
-been fully retired in favor of MedCAT.
+Two NLP engines previously filled the entity-discovery role here: Apache
+cTAKES (Java/Tomcat/MySQL), then MedCAT (an in-process Python model requiring
+a multi-gigabyte model pack in RAM). Both have been retired in favor of an
+LLM call — see [`docs/medcat-to-llm-term-discovery.md`](docs/medcat-to-llm-term-discovery.md)
+for why.
 
 ## Services
 
-- **`api/`** — FastAPI middleware: LLM refinement, MedCAT NER+L, Snowstorm
-  validation. See [`api/README.md`](api/README.md) for architecture, env
-  vars, endpoints, and full deployment steps (including how to obtain and
-  mount a MedCAT model pack).
+- **`api/`** — FastAPI middleware: LLM note refinement, LLM term discovery,
+  Snowstorm validation. See [`api/README.md`](api/README.md) for
+  architecture, env vars, endpoints, and full deployment steps.
 - **Snowstorm Lite** — SNOMED-CT terminology server (`snomedinternational/snowstorm-lite`).
   Onboard a SNOMED-CT RF2 release via `scripts/snomed/snomed_rf_refresh.py`
   (documented in `api/README.md`).
@@ -26,9 +27,9 @@ been fully retired in favor of MedCAT.
 ./build.sh
 ```
 
-Checks the MedCAT model pack is present, brings up `snowstorm-lite`,
-auto-onboards SNOMED CT from `scripts/snomed/data/` if the Snowstorm volume
-is empty, then builds+starts `cne-api-container` and `cne-gui-container` —
-all on a shared `backend` Docker network. See `docs/deployment-prerequisites.md`
-for what needs to be in place first (model pack, SNOMED archive, `.env`) and
-`deploy.sh` for copying those to a remote server.
+Brings up `snowstorm-lite`, auto-onboards SNOMED CT from
+`scripts/snomed/data/` if the Snowstorm volume is empty, then builds+starts
+`cne-api-container` and `cne-gui-container` — all on a shared `backend`
+Docker network. See `docs/deployment-prerequisites.md` for what needs to be
+in place first (SNOMED archive, `.env`) and `deploy.sh` for copying those to
+a remote server.

@@ -23,16 +23,41 @@ Raw text from the doctor's clinical notes written during triage or consultation:
 **Example Output**:
 The patient presents with essential (primary) hypertension, type 2 diabetes mellitus without complications, and hyperlipidemia. The patient has a history of hepatitis A diagnosed in 2022. Currently, the patient reports no active complaints, with blood pressure and blood glucose levels well controlled. The patient is managed with Losartan 100 mg once daily for hypertension, Metformin 1000 mg twice daily and Gliclazide 80 mg once daily for type 2 diabetes, Atorvastatin 40 mg at night for hyperlipidemia, and Aspirin 100 mg once daily for cardiovascular protection. The treatment plan includes continuing these medications as prescribed, with regular monitoring of blood pressure and blood glucose to maintain control.
 
-Generate the narrative that is suitable for SNOMED-CT mapping using MedCAT for the provided input.
+Generate the narrative that is suitable for SNOMED-CT term extraction for the provided input.
+"""
+
+term_discovery_prompt = """
+You are an expert clinical NLP system. Your task is to read a clinical narrative and extract every clinical entity it mentions, categorizing each one.
+
+Think through the note carefully before answering: identify each clinically relevant entity, decide which category it belongs to, and check whether it is actually asserted (not negated, denied, ruled out, or merely a family/social history item) before including it.
+
+**Categories** (tag each term with its SNOMED-CT semantic tag in parentheses):
+- Anatomical Sites: "Term (body structure)"
+- Procedures: "Term (procedure)"
+- Symptoms: "Term (finding)"
+- Diagnosis: "Term (disorder)"
+- Medications: "Term (substance)" or "Term (product)"
+
+**Rules**:
+- Only extract entities that are actually present/asserted. EXCLUDE anything explicitly negated or denied (e.g. "denies chest pain", "no known drug allergies", "no active complaints") - these must not appear in your output at all.
+- For medications, prefer generic names over brand names.
+- Do not invent entities that aren't mentioned or clearly implied in the text.
+- Focus on the human-readable term name only. Do not provide codes or concept IDs.
+
+**Input**:
+- A refined clinical narrative summary.
+
+**Output**:
+Return a JSON object with arrays for anatomical_sites, procedures, symptoms, diagnosis, and medications.
 """
 
 tags_filtering_and_enrichment_prompt = """
 You are an expert in medical text processing with a great understanding of SNOMED-CT concepts and clinical context. Your task is to filter, refine, and enrich the medical terms extracted from a clinical summary.
 
-MedCAT provides an initial list of terms, but it can be noisy or incomplete. Your goal is to:
+An initial term discovery step provides an initial list of terms, but it can be noisy or incomplete. Your goal is to:
 1. **Filter**: Remove terms that are irrelevant to the patient's current condition, history, or treatment plan.
 2. **Refine**: Ensure terms are clinically accurate and follow the formatting requirement below.
-3. **Enrich**: Suggest additional relevant SNOMED-CT terms (symptoms, procedures, anatomical sites, or generic medications) that are mentioned or strongly implied in the clinical summary but missing from the MedCAT list.
+3. **Enrich**: Suggest additional relevant SNOMED-CT terms (symptoms, procedures, anatomical sites, or generic medications) that are mentioned or strongly implied in the clinical summary but missing from the initial list.
 
 **TERM FORMATTING REQUIREMENT**:
 Append the SNOMED-CT semantic tag in parentheses to every term:
@@ -49,7 +74,7 @@ Append the SNOMED-CT semantic tag in parentheses to every term:
 
 **Input**:
 - **Clinical Text Summary**: {{clinical_text_summary}}
-- **Generated MedCAT Terms**: {{generated_snomed_ct_terms}}
+- **Generated Terms**: {{generated_snomed_ct_terms}}
 
 **Output**:
 Return a JSON object with arrays for anatomical_sites, procedures, symptoms, diagnosis, and medications.
