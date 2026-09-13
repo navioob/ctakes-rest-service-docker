@@ -7,43 +7,49 @@ from functools import lru_cache
 
 from .prompt import clinical_text_refinement_prompt, tags_filtering_and_enrichment_prompt, final_validation_prompt
 from .schema import clinical_text_refinement_schema_output, tags_filtering_and_enrichment_schema_output, final_validation_schema_output
-from .llm import llm_client, types
+from .llm import llm_client
 
-from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH, MEDCAT_MODEL_PACK_PATH
+from .config import SNOWSTORM_URL, SNOWSTORM_BRANCH, MEDCAT_MODEL_PACK_PATH, OPENAI_MODEL_ID
 
-async def call_llm(contents, config):
+async def call_llm(system_prompt, user_text, schema):
     """
-    Generic asynchronous wrapper for LLM calls using the Google GenAI API.
-    
+    Generic asynchronous wrapper for LLM calls using an OpenAI-compatible
+    chat completions API, forcing JSON output matching the given schema.
+
     Args:
-        contents: The prompt content/parts
-        config: Generation configuration (schema, temperature, etc.)
-    
+        system_prompt: System instruction text
+        user_text: User message text
+        schema: JSON Schema dict describing the expected response shape
+
     Returns:
-        tuple: (response, token_usage_dict)
+        tuple: (parsed_response_dict, token_usage_dict)
     """
+    messages = [
+        {"role": "system", "content": f"{system_prompt}\n\nRespond with ONLY a JSON object matching this JSON Schema, no markdown fences, no extra text:\n{json.dumps(schema)}"},
+        {"role": "user", "content": user_text},
+    ]
     try:
-        response = await llm_client.aio.models.generate_content(
-            model='gemini-3-flash-preview',
-            contents=contents,
-            config=config
+        response = await llm_client.chat.completions.create(
+            model=OPENAI_MODEL_ID,
+            messages=messages,
+            temperature=0.0,
+            response_format={"type": "json_object"},
         )
-        
-        # Extract token usage metadata from the response
-        input_tokens = 0
-        output_tokens = 0
-        
-        if hasattr(response, 'usage_metadata'):
-            usage = response.usage_metadata
-            input_tokens = getattr(usage, 'prompt_token_count', 0) or 0
-            output_tokens = getattr(usage, 'candidates_token_count', 0) or 0
-        
+
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.strip("`")
+            if content.startswith("json"):
+                content = content[4:]
+        parsed = json.loads(content)
+
+        usage = response.usage
         token_usage = {
-            'input_token': input_tokens,
-            'output_token': output_tokens
+            'input_token': getattr(usage, 'prompt_tokens', 0) or 0,
+            'output_token': getattr(usage, 'completion_tokens', 0) or 0,
         }
-        
-        return response, token_usage
+
+        return parsed, token_usage
     except Exception as e:
         print(f"LLM Call Error: {e}")
         raise e
@@ -54,21 +60,12 @@ async def generate_summary(doctors_text):
     Uses LLM with clinical_text_refinement_prompt.
     """
     try:
-        contents = [
-            types.Part.from_text(text=f"Raw text from the doctor's clinical notes written during triage or consultation: {doctors_text}"),
-        ]
-        
-        config = types.GenerateContentConfig(
-            system_instruction=types.Part.from_text(text=clinical_text_refinement_prompt),
-            temperature=0.0,
-            response_mime_type='application/json',
-            response_json_schema=clinical_text_refinement_schema_output,
-            thinking_config=types.ThinkingConfig(
-                thinking_level=types.ThinkingLevel.MINIMAL
-            )
+        parsed, token_usage = await call_llm(
+            clinical_text_refinement_prompt,
+            f"Raw text from the doctor's clinical notes written during triage or consultation: {doctors_text}",
+            clinical_text_refinement_schema_output,
         )
-        response, token_usage = await call_llm(contents, config)
-        return response.parsed['text'], token_usage
+        return parsed['text'], token_usage
     except Exception as e:
         print(f"Error in generate_summary: {e}")
         # Return original text as fallback and zero tokens
@@ -280,22 +277,12 @@ async def filter_tags(clinical_text, generated_terms):
     print("Filtering and enriching SNOMED-CT terms using LLM and SNOMED snapshot")
     try:
         # Step 3a: LLM filtering and enrichment
-        contents = [
-            types.Part.from_text(text=f"Clinical Text: {clinical_text}"),
-            types.Part.from_text(text=f"Generated Terms: {generated_terms}"),
-        ]
-        
-        config = types.GenerateContentConfig(
-            system_instruction=types.Part.from_text(text=tags_filtering_and_enrichment_prompt),
-            temperature=0.0,
-            response_mime_type='application/json',
-            response_json_schema=tags_filtering_and_enrichment_schema_output,
-            thinking_config=types.ThinkingConfig(
-            thinking_level=types.ThinkingLevel.MINIMAL
+        user_text = f"Clinical Text: {clinical_text}\nGenerated Terms: {generated_terms}"
+        filtered_and_enriched_tags, token_usage = await call_llm(
+            tags_filtering_and_enrichment_prompt,
+            user_text,
+            tags_filtering_and_enrichment_schema_output,
         )
-        )
-        response, token_usage = await call_llm(contents, config)
-        filtered_and_enriched_tags = response.parsed
         tokens_used['filter_tags'] = token_usage
 
         print("Result from LLM:", filtered_and_enriched_tags, "\n")
@@ -319,7 +306,12 @@ async def filter_tags(clinical_text, generated_terms):
     }
 
     async def resolve_term(section, item, client):
-        term = item.get('term', '')
+        # The LLM is asked for [{"term": ...}, ...] per section, but
+        # response_format=json_object only guarantees valid JSON - not this
+        # exact nested shape. Some models flatten to a plain list of strings
+        # instead. Accept either so a schema-format slip doesn't wipe out
+        # the whole section.
+        term = item.get('term', '') if isinstance(item, dict) else (item if isinstance(item, str) else '')
         if not term:
             return None
 
@@ -379,25 +371,15 @@ async def validate_final_output(clinical_text, final_output):
     - Categorizes diagnoses into communicable vs non-communicable.
     """
     compact_json = json.dumps(final_output, separators=(',', ':'))
-    
-    contents = [
-        types.Part.from_text(text=f"Clinical: {clinical_text}"),
-        types.Part.from_text(text=f"Terms: {compact_json}"),
-    ]
-    
-    config = types.GenerateContentConfig(
-        system_instruction=types.Part.from_text(text=final_validation_prompt),
-        temperature=0.0,
-        response_mime_type='application/json',
-        response_json_schema=final_validation_schema_output,
-        thinking_config=types.ThinkingConfig(
-                thinking_level=types.ThinkingLevel.MINIMAL
-            ))
-    
+    user_text = f"Clinical: {clinical_text}\nTerms: {compact_json}"
+
     try:
-        response, token_usage = await call_llm(contents, config)
-        validated_output = response.parsed
-        
+        validated_output, token_usage = await call_llm(
+            final_validation_prompt,
+            user_text,
+            final_validation_schema_output,
+        )
+
         # Ensure all required keys exist in the response
         for section in ["anatomical_sites", "procedures", "symptoms", "medications"]:
             if section not in validated_output:

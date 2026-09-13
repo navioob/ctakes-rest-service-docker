@@ -1,6 +1,6 @@
 # 🩺 Clinical Note Enhancer
 
-A Streamlit application that transforms raw clinical notes into professionally articulated summaries and extracts SNOMED-CT codes via the `api/` service (MedCAT + Google Gemini AI).
+A Streamlit application that transforms raw clinical notes into professionally articulated summaries and extracts SNOMED-CT codes via the `api/` service (MedCAT + an OpenAI-compatible LLM).
 
 ## ✨ Features
 
@@ -20,8 +20,7 @@ Before running the application, ensure you have the following:
 - **pip** package manager
 
 ### 2. External Services
-- **Google Gemini API Key**: Required for AI-powered summary generation (please include it in your .env file in the root directory)
-- **`api/` service**: Running at `http://localhost:8082` (see `api/README.md` for setup, including MedCAT and Snowstorm)
+- **`api/` service**: reachable from the GUI — `http://localhost:8082` when both run on the host, or `http://cne-api-container:8082` when both run as containers on the shared `backend` Docker network (see `api/README.md` for setup, including the OpenAI-compatible LLM, MedCAT, and Snowstorm). The API itself needs `OPENAI_API_BASE`/`OPENAI_API_KEY`/`OPENAI_MODEL_ID` — the GUI has no LLM credentials of its own, it only calls the API over HTTP.
 
 ## 🛠️ Installation
 
@@ -35,17 +34,17 @@ pip install -r requirements.txt
 **Key Dependencies:**
 - `streamlit` - Web application framework
 - `requests` - HTTP client for the `api/` service
-- `google-generativeai` - Google Gemini AI integration
-- `pandas` - SNOMED-CT file processing
+- `streamlit-authenticator` - login/session handling
 - `python-dotenv` - Environment variable management
 
 ### Step 2: Setup Environment Variables
-Create a `.env` file in the root directory:
+The GUI reads these from `.env` (root `.env` when run via `./build.sh`, or
+`gui/.env` when run standalone):
 
 ```bash
 # .env file
-GOOGLE_APPLICATION_CREDENTIALS
-GOOGLE_APPLICATION_SCOPE
+API_BASE_URL=http://localhost:8082
+API_BEARER_TOKEN=<matches the api/ service's API_BEARER_TOKEN>
 ```
 
 ### Step 3: Download SNOMED-CT Snapshot Files
@@ -70,8 +69,13 @@ Download the required SNOMED-CT files (requires valid license):
 
 ## 🚀 Running the Application
 
-### Start Streamlit
-From the root directory, run:
+### Containerized (recommended)
+From the repository root: `./build.sh` builds and runs the GUI alongside
+Snowstorm and the API, wired to reach the API over the `backend` Docker
+network. Open `http://localhost:8081`.
+
+### Standalone (local Streamlit)
+From the `gui/` directory, with `API_BASE_URL` pointing at a running API:
 
 ```bash
 streamlit run main.py
@@ -121,19 +125,22 @@ SNOMED_DESC_FILE = "path/to/your/sct2_Description_Snapshot_*.txt"
 ```
 
 ### `api/` Service Configuration
-Modify the API base URL in `helpers.py` if it's not running on `localhost:8082`.
+Set `API_BASE_URL` in `.env` if the API isn't reachable at `localhost:8082`
+(e.g. `http://cne-api-container:8082` when containerized — `build.sh` sets
+this automatically).
 
 ### LLM Model
-Change the Gemini model in `helpers.py`:
+The LLM is configured on the `api/` side, not here — see `OPENAI_API_BASE`/
+`OPENAI_MODEL_ID` in `api/README.md`.
 
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
 1. **"Failed to generate enriched summary"**
-   - Check your google service account in the environment file.
-   - Verify internet connectivity
-   - Ensure Google Gemini API is enabled
+   - Check `OPENAI_API_BASE`/`OPENAI_API_KEY`/`OPENAI_MODEL_ID` in the API's environment file (`api/README.md`)
+   - Verify internet connectivity from the `api/` container to that endpoint
+   - Check `cne-api-container` logs for the actual LLM error: `docker logs cne-api-container`
 
 2. **"Failed to generate tags"**
    - Verify the `api/` service is running: `curl http://localhost:8082/health`
@@ -157,9 +164,8 @@ Change the Gemini model in `helpers.py`:
 - For research/educational use, contact [NLM UMLS](https://www.nlm.nih.gov/research/umls/)
 - Commercial use requires SNOMED International licensing
 
-### Google Gemini API
-- Subject to [Google AI Terms of Service](https://ai.google.dev/terms)
-- Usage limits apply based on API key tier
+### LLM Provider
+- Subject to whichever OpenAI-compatible provider is configured via `OPENAI_API_BASE` in the API's environment — check that provider's terms and usage limits
 
 ### MedCAT
 - Licensed under Apache License 2.0 — see the [CogStack MedCAT repository](https://github.com/CogStack/cogstack-nlp/) for details

@@ -1,18 +1,13 @@
 from dotenv import load_dotenv
-import json
 import os
-import ast
 
 # Load environment variables from .env file at the start of the application
 load_dotenv(override=True)
 
-# Configuration for Google LLM (Gemini/Vertex AI)
-# GOOGLE_APPLICATION_CREDENTIALS should contain the JSON string of the service account key
-# GOOGLE_APPLICATION_SCOPES should contain the required OAuth scopes
-llm_credentials = {
-    "GOOGLE_APPLICATION_CREDENTIALS": ast.literal_eval(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
-    "GOOGLE_APPLICATION_SCOPES": [(os.getenv("GOOGLE_APPLICATION_SCOPES"))]
-}
+# Configuration for the OpenAI-compatible LLM endpoint
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL_ID = os.getenv("OPENAI_MODEL_ID")
 
 # Snowstorm Configuration
 SNOWSTORM_URL = os.getenv("SNOWSTORM_URL")

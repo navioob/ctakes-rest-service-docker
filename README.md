@@ -18,14 +18,15 @@ been fully retired in favor of MedCAT.
 - **Snowstorm Lite** — SNOMED-CT terminology server (`snomedinternational/snowstorm-lite`).
   Onboard a SNOMED-CT RF2 release via `scripts/snomed/snomed_rf_refresh.py`
   (documented in `api/README.md`).
-- **`gui/`** — optional Streamlit client for the API.
+- **`gui/`** — Streamlit client for the API.
 
 ## Quick start
 
 ```bash
-./start.sh
+./build.sh
 ```
 
-Brings up `snowstorm-lite` and the `cne-api` container on a shared `backend`
-Docker network. See `api/README.md` for the model pack and Snowstorm
-onboarding steps you need to run first.
+Brings up `snowstorm-lite`, `cne-api-container`, and `cne-gui-container` on a
+shared `backend` Docker network. See `api/README.md` for the OpenAI-compatible
+LLM env vars, the MedCAT model pack, and the Snowstorm onboarding step you
+need to run before (or after) first bring-up.

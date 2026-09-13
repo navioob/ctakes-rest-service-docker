@@ -2,9 +2,7 @@ fastapi
 uvicorn
 gunicorn
 httpx
-google-genai
-google-generativeai
-google-auth
+openai
 python-dotenv
 bcrypt
 requests

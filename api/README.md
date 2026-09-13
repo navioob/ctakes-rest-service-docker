@@ -1,6 +1,6 @@
 # 🚀 Clinical Notes Enhancer API
 
-This directory contains the **FastAPI middleware service**. It bridges clinical text inputs with LLM refinement (Google Gemini), Named Entity Recognition run in-process via [MedCAT](https://github.com/CogStack/cogstack-nlp/), and concept validation against a local SNOMED-CT database (Snowstorm).
+This directory contains the **FastAPI middleware service**. It bridges clinical text inputs with LLM refinement (any OpenAI-compatible chat completions endpoint), Named Entity Recognition run in-process via [MedCAT](https://github.com/CogStack/cogstack-nlp/), and concept validation against a local SNOMED-CT database (Snowstorm).
 
 ---
 
@@ -11,21 +11,21 @@ The API coordinates a multi-stage pipeline to process unstructured clinical text
 ```mermaid
 graph TD
     A[Raw Doctor Notes] --> B[POST /generate/note]
-    B --> C[Gemini: Note Refinement]
+    B --> C[LLM: Note Refinement]
     C --> D[Professional Narrative Summary]
     D --> E[POST /generate/terms]
     E --> F[MedCAT: In-Process NER+L]
     F --> G[JSON Parser: Filter Negated Mentions]
-    G --> H[Gemini: Noise Filter & Enrichment]
+    G --> H[LLM: Noise Filter & Enrichment]
     H --> I[Snowstorm FHIR API: Code Verification & ECL Filter]
-    I --> J[Gemini: Final Validation & Disease Split]
+    I --> J[LLM: Final Validation & Disease Split]
     J --> K[Categorized SNOMED-CT Terms]
 ```
 
 ### Pipeline Details:
 1. **Clinical Note Refinement (`/generate/note`)**: Translates shorthand clinical notes and abbreviations (e.g., `DM` ➔ `Diabetes Mellitus`, `HPT` ➔ `Hypertension`, `od` ➔ `once daily`) into a formal clinical narrative summary.
 2. **Named Entity Recognition (NER)**: Runs the refined narrative through an in-process MedCAT model (loaded once per worker, on first use) to extract medical concepts (medications, procedures, symptoms, anatomical sites, diagnoses).
-3. **Filtering & Enrichment**: Google Gemini filters out irrelevant mapping tags and enriches the results with any missing terms implied by the context.
+3. **Filtering & Enrichment**: The configured LLM filters out irrelevant mapping tags and enriches the results with any missing terms implied by the context.
 4. **SNOMED-CT Concept Mapping**: Query terms are checked against the Snowstorm Lite FHIR expansion API (`/fhir/ValueSet/$expand`) using Expression Constraint Language (ECL) scopes to extract accurate codes and descriptions.
 5. **Final Validation & Disease Split**: Categorizes diagnoses into `communicable_disease` and `non_communicable_disease`, discarding any contextually invalid mappings.
 
@@ -37,8 +37,9 @@ Create a `.env` file in the project root directory (referenced by the API contai
 
 | Variable | Description | Example / Default Value |
 | :--- | :--- | :--- |
-| `GOOGLE_APPLICATION_CREDENTIALS` | JSON service account key string for Vertex AI/Gemini access | `{"type": "service_account", ...}` |
-| `GOOGLE_APPLICATION_SCOPES` | Cloud platform authorization scope | `https://www.googleapis.com/auth/cloud-platform` |
+| `OPENAI_API_BASE` | Base URL of an OpenAI-compatible chat completions API | `https://<provider>/compatible-mode/v1` |
+| `OPENAI_API_KEY` | API key for that endpoint | `sk-...` |
+| `OPENAI_MODEL_ID` | Model name to request from that endpoint | `qwen3.8-flash` |
 | `API_BEARER_TOKEN` | Raw authentication token string (used by client/tests) | `c73e3c54-b81b-45e9-ae05-8437e7ea3f2e` |
 | `API_BEARER_TOKEN_HASH` | Bcrypt hash of the bearer token for security verification | `$2a$12$hknEgVoR.cfg.115lfneS...` |
 | `SNOWSTORM_URL` | Base URL of the Snowstorm FHIR terminology server | `http://snowstorm-lite:8080` (or `http://localhost:8080`) |
@@ -78,7 +79,10 @@ print("API_BEARER_TOKEN_HASH=" + hashed.decode('utf-8'))
 
 ## 🐳 End-to-End Container Deployment
 
-To run the complete pipeline, both services must share the same Docker network (`backend`).
+To run the complete pipeline, all services must share the same Docker network (`backend`).
+The fastest path is `./build.sh` from the repository root, which does everything
+below (network, Snowstorm, API, GUI) in one command — the steps are broken out
+here for manual/partial deployment.
 
 ### Step 1: Create the Docker Network
 ```bash
@@ -122,10 +126,11 @@ This script handles the onboarding process by:
 3. Polling the import status until it reports `COMPLETED`.
 
 ### Step 4: Deploy the FastAPI Middleware API
-You can build and deploy the API using the helper script `start.sh`:
+You can build and deploy the API using the helper script `api/start.sh`
+(also invoked automatically by the root `build.sh`):
 ```bash
-chmod +x start.sh
-./start.sh
+chmod +x api/start.sh
+./api/start.sh
 ```
 
 Alternatively, run the manual Docker commands:
