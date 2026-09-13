@@ -14,28 +14,30 @@ cd ctakes-rest-service-docker
 
 ## 2. The MedCAT model pack
 
-The API loads this from a host path mounted into its container — it is
-**not** part of the repo and is **not** downloaded by any build script (it's
-a licensed, multi-gigabyte artifact — see `docs/ctakes-to-medcat-migration.md`
-and `api/README.md` for how to obtain one).
+Drops into `medcat_models/model_pack` at the repo root — gitignored, not
+part of the repo, not downloaded by any build script (it's a licensed,
+multi-gigabyte artifact — see `docs/ctakes-to-medcat-migration.md` and
+`api/README.md` for how to obtain one). `api/start.sh` defaults to reading
+it from exactly that repo-relative path, on both your machine and the
+server, so nothing needs configuring once it's there.
 
-Copy the model pack directory from wherever you downloaded/unpacked it to
-the server, at the path `api/start.sh` expects by default
-(`$HOME/medcat_models/model_pack`):
+**`deploy.sh`** (repo root) copies the model pack, any SNOMED CT RF2
+archive (see §4), and `.env` to a server over SSH in one go. Edit the
+`REMOTE_USER`/`REMOTE_HOST`/`REMOTE_REPO_PATH` variables at its top, then:
 
 ```bash
-scp -r ~/medcat_models/model_pack your-user@your-server:~/medcat_models/model_pack
+./deploy.sh
 ```
 
-If you'd rather keep it elsewhere on the server, set
-`MEDCAT_MODEL_PACK_HOST_PATH` before running `./build.sh` (it's read by
-`api/start.sh`).
+If you'd rather keep the model pack elsewhere on the server, set
+`MEDCAT_MODEL_PACK_HOST_PATH` before running `./build.sh` there.
 
 ## 3. `.env`
 
 The root `.env` holds real secrets (`API_BEARER_TOKEN`, `API_BEARER_TOKEN_HASH`,
 `OPENAI_API_KEY`) — it is gitignored and must be copied out-of-band, never
-committed:
+committed. `deploy.sh` (above) does this along with the model pack and SNOMED archive;
+manually it's:
 
 ```bash
 scp .env your-user@your-server:~/ctakes-rest-service-docker/.env
@@ -48,22 +50,32 @@ Required variables (see `api/README.md` for the full table): `OPENAI_API_BASE`,
 
 ## 4. SNOMED CT RF2 archive (for Snowstorm onboarding)
 
-Snowstorm Lite starts empty. Once it's running (`./build.sh` starts it), copy
-your licensed SNOMED CT RF2 release archive to the server and onboard it:
+Drops into `scripts/snomed/data/` at the repo root — also gitignored (the
+bare `data` pattern), same convention as the model pack. `deploy.sh` copies
+whatever's in that directory to the same repo-relative path on the server
+(skips this step with a message if the directory is empty locally).
+
+`./build.sh` handles onboarding itself now: it waits for Snowstorm Lite to
+come up, checks whether SNOMED is already loaded (data persists across
+container recreation in a named Docker volume, so this is normally only
+needed once per fresh volume), and if not, auto-onboards the first `.zip`
+it finds in `scripts/snomed/data/`. No manual step needed as long as the
+archive is there before running `./build.sh` — it just warns and continues
+if the directory's empty.
+
+To onboard manually instead:
 
 ```bash
-scp SnomedCT_RF2Release_INT_PRODUCTION.zip your-user@your-server:~/
 python scripts/snomed/snomed_rf_refresh.py \
-  --archive-path ~/SnomedCT_RF2Release_INT_PRODUCTION.zip \
+  --archive-path scripts/snomed/data/SnomedCT_InternationalRF2_PRODUCTION_<date>.zip \
   --base-url http://localhost:8083
 ```
 
 ## Order of operations on a fresh server
 
-1. `git clone` the repo.
-2. `scp -r` the MedCAT model pack to `~/medcat_models/model_pack`.
-3. `scp` the root `.env` into the repo.
-4. `scp` the SNOMED CT RF2 archive (or run onboarding later, once Snowstorm is up).
-5. `./build.sh` — brings up Snowstorm Lite, the API, and the GUI.
-6. Run `scripts/snomed/snomed_rf_refresh.py` against `http://localhost:8083` if step 4's archive wasn't onboarded yet.
-7. Verify: `curl http://localhost:8082/health` and `curl http://localhost:8082/generate/medcat/health` (with the bearer token), then open `http://localhost:8081` for the GUI.
+1. `git clone` the repo, on both your machine (if not already) and the server.
+2. Drop the MedCAT model pack into `medcat_models/model_pack` on your machine.
+3. Drop your licensed SNOMED CT RF2 archive into `scripts/snomed/data/` on your machine.
+4. `./deploy.sh` (after editing its `REMOTE_*` vars) — copies the model pack, SNOMED archive, and `.env` to the server.
+5. On the server: `./build.sh` — checks the model pack is present, brings up Snowstorm Lite, auto-onboards SNOMED if the volume is empty, then starts the API and the GUI.
+6. Verify: `curl http://localhost:8082/health` and `curl http://localhost:8082/generate/medcat/health` (with the bearer token), then open `http://localhost:8081` for the GUI.

@@ -26,7 +26,9 @@ been fully retired in favor of MedCAT.
 ./build.sh
 ```
 
-Brings up `snowstorm-lite`, `cne-api-container`, and `cne-gui-container` on a
-shared `backend` Docker network. See `api/README.md` for the OpenAI-compatible
-LLM env vars, the MedCAT model pack, and the Snowstorm onboarding step you
-need to run before (or after) first bring-up.
+Checks the MedCAT model pack is present, brings up `snowstorm-lite`,
+auto-onboards SNOMED CT from `scripts/snomed/data/` if the Snowstorm volume
+is empty, then builds+starts `cne-api-container` and `cne-gui-container` —
+all on a shared `backend` Docker network. See `docs/deployment-prerequisites.md`
+for what needs to be in place first (model pack, SNOMED archive, `.env`) and
+`deploy.sh` for copying those to a remote server.

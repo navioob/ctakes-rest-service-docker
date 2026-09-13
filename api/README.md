@@ -94,7 +94,7 @@ Sign in at `https://medcat.sites.er.kcl.ac.uk/auth-callback-api` with your
 UMLS/UTS API key, complete the model-pack request form, and download a
 MedCAT SNOMED CT model pack. `CAT.load_model_pack()` accepts either a `.zip`
 or an already-unpacked directory - place whichever you got at
-`$HOME/medcat_models/model_pack` (the default `api/start.sh` looks for), or
+`<repo>/medcat_models/model_pack` (the default `api/start.sh` looks for), or
 set `MEDCAT_MODEL_PACK_HOST_PATH` to point elsewhere. It's mounted into the
 API container read-only at container start; it is not baked into the image.
 
@@ -144,7 +144,7 @@ docker run -d \
   --network backend \
   -p 8082:8082 \
   --env-file ../.env \
-  -v "$HOME/medcat_models/model_pack:/models/model_pack:ro" \
+  -v "<repo>/medcat_models/model_pack:/models/model_pack:ro" \
   --restart unless-stopped \
   cne-api
 ```

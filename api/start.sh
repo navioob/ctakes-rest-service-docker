@@ -16,7 +16,10 @@ PORT=8082
 # Host path to the downloaded MedCAT model pack (a directory, or a .zip -
 # CAT.load_model_pack() handles either), mounted read-only into the
 # container. Requires a UTS/UMLS-licensed download - see api/README.md.
-MEDCAT_MODEL_PACK_HOST_PATH="${MEDCAT_MODEL_PACK_HOST_PATH:-$HOME/medcat_models/model_pack}"
+# Defaults to <repo>/medcat_models/model_pack (gitignored - each clone drops
+# its own copy there; deploy.sh copies it to the same repo-relative path on
+# a remote server).
+MEDCAT_MODEL_PACK_HOST_PATH="${MEDCAT_MODEL_PACK_HOST_PATH:-${ROOT_DIR}/medcat_models/model_pack}"
 
 echo "Starting deployment of ${IMAGE_NAME}..."
 

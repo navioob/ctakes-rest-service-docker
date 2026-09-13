@@ -2,6 +2,18 @@
 set -e
 
 ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+MEDCAT_MODEL_PACK_HOST_PATH="${MEDCAT_MODEL_PACK_HOST_PATH:-${ROOT_DIR}/medcat_models/model_pack}"
+SNOMED_DATA_DIR="${ROOT_DIR}/scripts/snomed/data"
+SNOWSTORM_HOST_URL="http://localhost:8083"
+
+# Fail fast, before touching any containers, if the MedCAT model pack isn't
+# where api/start.sh expects it - a missing/empty dir would otherwise get
+# silently bind-mounted as empty and fail confusingly at first request.
+if [ ! -d "${MEDCAT_MODEL_PACK_HOST_PATH}" ] || [ -z "$(ls -A "${MEDCAT_MODEL_PACK_HOST_PATH}" 2>/dev/null)" ]; then
+    echo "ERROR: MedCAT model pack not found at ${MEDCAT_MODEL_PACK_HOST_PATH}" >&2
+    echo "Copy it there first (see docs/deployment-prerequisites.md / deploy.sh), or set MEDCAT_MODEL_PACK_HOST_PATH." >&2
+    exit 1
+fi
 
 # Ensure docker network 'backend' exists
 if ! docker network inspect backend >/dev/null 2>&1; then
@@ -20,6 +32,36 @@ echo "Starting snowstorm-lite..."
 docker run -d -p 8083:8080 --name snowstorm-lite --network backend \
     -v snowstorm-lite-volume:/app/lucene-index \
     snomedinternational/snowstorm-lite --index.path=lucene-index/data --admin.password=admin
+
+echo "Waiting for snowstorm-lite to come up..."
+for i in $(seq 1 60); do
+    if curl -sf -o /dev/null "${SNOWSTORM_HOST_URL}/fhir/CodeSystem"; then
+        break
+    fi
+    sleep 3
+    if [ "$i" -eq 60 ]; then
+        echo "ERROR: snowstorm-lite didn't respond after 3 minutes." >&2
+        exit 1
+    fi
+done
+
+# Data survives across container recreation (named volume), so only onboard
+# if this is genuinely a fresh volume with nothing loaded yet.
+echo "Checking whether SNOMED CT is already loaded into Snowstorm..."
+EXPAND_RESPONSE="$(curl -s "${SNOWSTORM_HOST_URL}/fhir/ValueSet/\$expand?url=http://snomed.info/sct?fhir_vs&count=1")"
+if echo "${EXPAND_RESPONSE}" | grep -q '"contains"'; then
+    echo "SNOMED CT already loaded, skipping onboarding."
+else
+    ARCHIVE_PATH="$(find "${SNOMED_DATA_DIR}" -maxdepth 1 -name '*.zip' 2>/dev/null | head -n1)"
+    if [ -n "${ARCHIVE_PATH}" ]; then
+        echo "Nothing loaded yet - onboarding ${ARCHIVE_PATH}..."
+        python3 "${ROOT_DIR}/scripts/snomed/snomed_rf_refresh.py" \
+            --archive-path "${ARCHIVE_PATH}" \
+            --base-url "${SNOWSTORM_HOST_URL}"
+    else
+        echo "WARNING: no SNOMED CT loaded and no archive found in ${SNOMED_DATA_DIR} - Snowstorm will stay empty until you onboard one manually." >&2
+    fi
+fi
 
 echo "Starting the API (builds+runs cne-api; MedCAT loads in-process on first request)..."
 "${ROOT_DIR}/api/start.sh"
