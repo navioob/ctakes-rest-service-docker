@@ -28,6 +28,17 @@ for name in snowstorm-lite cne-gui-container; do
     fi
 done
 
+# Also catch any leftover container holding one of our ports under a
+# different name (e.g. a pre-rename "clinical-notes-enhancer") - a stale
+# container by name is one thing, but a port bind failure kills the whole
+# script partway through, so check by port too.
+for port in 8081 8082 8083; do
+    for name in $(docker ps -a --filter "publish=${port}" --format '{{.Names}}'); do
+        echo "Stopping and removing container holding port ${port}: ${name}..."
+        docker rm -f "${name}" >/dev/null
+    done
+done
+
 echo "Starting snowstorm-lite..."
 docker run -d -p 8083:8080 --name snowstorm-lite --network backend \
     -v snowstorm-lite-volume:/app/lucene-index \

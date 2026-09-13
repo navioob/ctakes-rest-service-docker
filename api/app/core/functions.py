@@ -34,6 +34,10 @@ async def call_llm(system_prompt, user_text, schema):
             messages=messages,
             temperature=0.0,
             response_format={"type": "json_object"},
+            # Qwen3 hybrid models default to thinking mode, burning heavy
+            # reasoning tokens even for a short structured-JSON task - not a
+            # standard OpenAI param, so it goes through extra_body.
+            extra_body={"enable_thinking": False},
         )
 
         content = response.choices[0].message.content.strip()
